@@ -4,6 +4,16 @@ import { requireSession } from "@/lib/auth/require-session";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { LabelPreview } from "@/components/label-preview";
 
+function formatDateTime(value: string): string {
+  return new Date(value).toLocaleString("es-ES", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requireSession();
@@ -21,8 +31,8 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
     ["TK", order.tk],
     ["Cliente", order.cliente ?? "—"],
     ["Precio", `${(order.precio_cents / 100).toFixed(2)} ${order.moneda}`],
-    ["Fecha del pedido", order.fecha_pedido ? new Date(order.fecha_pedido).toLocaleString() : "—"],
-    ["Detectado el", new Date(order.fecha_detectado).toLocaleString()],
+    ["Fecha del pedido", order.fecha_pedido ? formatDateTime(order.fecha_pedido) : "—"],
+    ["Detectado el", formatDateTime(order.fecha_detectado)],
     ["Estado", order.estado_impresion],
     ["Reimpresiones", String(order.reimpresiones)],
     ["Notas", order.notes ?? "—"],

@@ -113,7 +113,11 @@ export function OrdersTable({
                     {o.moneda === "EUR" ? "€" : o.moneda}
                   </td>
                   <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">
-                    {new Date(o.fecha_detectado).toLocaleDateString()}
+                    {new Date(o.fecha_detectado).toLocaleDateString("es-ES", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                    })}
                   </td>
                   <td className="px-4 py-2">
                     <EstadoBadge estado={o.estado_impresion} />
