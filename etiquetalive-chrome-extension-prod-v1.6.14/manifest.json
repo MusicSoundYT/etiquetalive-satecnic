@@ -1,0 +1,66 @@
+{
+  "manifest_version": 3,
+  "name": "EtiquetaLive by AIN",
+  "version": "1.6.14",
+  "description": "Impresión automática de etiquetas para pedidos TikTok Shop — by AIN TRADING HK LTD",
+  "icons": {
+    "128": "icon128.png"
+  },
+  "permissions": [
+    "storage"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "host_permissions": [
+    "https://seller-es.tiktok.com/*",
+    "https://shop.tiktok.com/*",
+    "https://etiquetalive.satecnic.es/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://seller-es.tiktok.com/order*"
+      ],
+      "js": [
+        "order-watcher.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://shop.tiktok.com/streamer/live/product/dashboard*",
+        "https://shop.tiktok.com/streamer/live/*"
+      ],
+      "js": [
+        "auction-watcher.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "order-api-hook.js"
+      ],
+      "matches": [
+        "https://seller-es.tiktok.com/*"
+      ]
+    },
+    {
+      "resources": [
+        "auction-api-hook.js"
+      ],
+      "matches": [
+        "https://shop.tiktok.com/*"
+      ]
+    }
+  ],
+  "action": {
+    "default_title": "EtiquetaLive by AIN",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "128": "icon128.png"
+    }
+  }
+}

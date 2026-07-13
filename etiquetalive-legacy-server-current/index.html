@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EtiquetaLive — Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; background: #0a0a0b; color: #e0dcd5; min-height: 100vh; }
+  input, select, textarea { background: #1a1a1d; border: 1px solid rgba(216,183,107,.2); color: #e0dcd5; padding: 10px 14px; border-radius: 12px; font-size: 14px; width: 100%; outline: none; }
+  input:focus { border-color: #d8b76b; }
+  button { cursor: pointer; transition: all .2s; }
+  .btn-gold { background: linear-gradient(135deg, #c9a84c, #d8b76b); color: #0a0a0b; font-weight: 700; padding: 12px 28px; border: none; border-radius: 14px; font-size: 15px; }
+  .btn-dark { background: rgba(255,255,255,.06); color: #e0dcd5; border: 1px solid rgba(216,183,107,.15); padding: 10px 20px; border-radius: 12px; font-size: 13px; }
+  .btn-dark:hover { background: rgba(255,255,255,.1); }
+  a { color: #d8b76b; text-decoration: none; }
+  .card { background: rgba(255,255,255,.03); border: 1px solid rgba(216,183,107,.1); border-radius: 20px; padding: 24px; backdrop-filter: blur(8px); }
+  .badge { background: rgba(216,183,107,.15); color: #d8b76b; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .loader { text-align: center; padding: 40px; color: #a69b86; }
+
+  /* Landing */
+  .landing { max-width: 800px; margin: 0 auto; padding: 60px 24px; text-align: center; }
+  .landing h1 { font-size: 48px; font-weight: 800; color: #f3dfad; margin: 20px 0; }
+  .landing .sub { color: #a69b86; font-size: 18px; margin-bottom: 40px; line-height: 1.6; }
+  .landing .price-box { background: rgba(216,183,107,.08); border: 1px solid rgba(216,183,107,.2); border-radius: 24px; padding: 40px; margin: 30px 0; }
+  .landing .price { font-size: 64px; font-weight: 800; color: #f3dfad; }
+  .landing .price small { font-size: 24px; font-weight: 400; }
+  .landing .features { text-align: left; margin: 30px 0; }
+  .landing .features li { padding: 10px 0; list-style: none; color: #a69b86; }
+  .landing .features li::before { content: '✓ '; color: #43d08a; font-weight: 700; }
+
+  /* Login/Register */
+  .auth-box { max-width: 420px; margin: 80px auto; padding: 40px; text-align: center; }
+  .auth-box .logo { font-size: 32px; font-weight: 800; color: #f3dfad; margin-bottom: 8px; }
+  .auth-box h2 { font-size: 24px; margin-bottom: 24px; }
+  .auth-box input { margin-bottom: 16px; }
+  .auth-box .switch { margin-top: 16px; font-size: 14px; color: #a69b86; }
+
+  /* Dashboard */
+  .dash { display: flex; min-height: 100vh; }
+  .sidebar { width: 240px; background: rgba(0,0,0,.3); border-right: 1px solid rgba(216,183,107,.1); padding: 24px; }
+  .sidebar .logo { font-size: 20px; font-weight: 800; color: #f3dfad; margin-bottom: 32px; }
+  .sidebar nav a { display: block; padding: 12px 16px; border-radius: 12px; color: #a69b86; margin-bottom: 4px; font-size: 14px; }
+  .sidebar nav a:hover, .sidebar nav a.active { background: rgba(216,183,107,.1); color: #f3dfad; }
+  .main { flex: 1; padding: 32px; overflow-y: auto; }
+  .main h1 { font-size: 28px; color: #f3dfad; margin-bottom: 8px; }
+  .main .desc { color: #a69b86; margin-bottom: 24px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 32px; }
+  .stat-card { background: rgba(255,255,255,.03); border: 1px solid rgba(216,183,107,.1); border-radius: 16px; padding: 20px; }
+  .stat-card .label { font-size: 12px; color: #a69b86; text-transform: uppercase; letter-spacing: .5px; }
+  .stat-card .value { font-size: 28px; font-weight: 700; color: #f3dfad; margin-top: 4px; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 12px 16px; color: #a69b86; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid rgba(216,183,107,.1); }
+  th[onclick], th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: #f3dfad; }
+  .sort-arrow { color: #d8b76b; margin-left: 4px; font-size: 11px; }
+  td { padding: 14px 16px; border-bottom: 1px solid rgba(216,183,107,.05); font-size: 14px; }
+  tr:hover { background: rgba(255,255,255,.02); }
+  .text-green { color: #43d08a; }
+  .text-gold { color: #d8b76b; }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 24px; background: rgba(0,0,0,.2); border-radius: 16px; padding: 4px; width: fit-content; }
+  .tabs button { padding: 10px 20px; border: none; background: transparent; color: #a69b86; border-radius: 12px; font-size: 14px; }
+  .tabs button.active { background: rgba(216,183,107,.15); color: #f3dfad; }
+
+  @media (max-width: 768px) { .dash { flex-direction: column; } .sidebar { width: 100%; padding: 16px; } }
+  .error { color: #ef5350; font-size: 13px; margin-top: 8px; }
+  .success { color: #43d08a; font-size: 13px; margin-top: 8px; }
+  .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .config-grid label { display: block; font-size: 12px; color: #a69b86; margin-bottom: 4px; }
+  .config-grid .full { grid-column: 1 / -1; }
+  .api-key-box { background: rgba(0,0,0,.3); border-radius: 12px; padding: 12px 16px; font-family: monospace; font-size: 13px; word-break: break-all; display: flex; align-items: center; gap: 12px; }
+  .api-key-box button { flex-shrink: 0; }
+  .template-designer { display:grid; grid-template-columns:minmax(280px, 420px) 1fr; gap:24px; align-items:start; }
+  .field-checks { display:grid; gap:10px; margin-top:10px; }
+  .field-check { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:12px 14px; border:1px solid rgba(216,183,107,.12); border-radius:14px; background:rgba(0,0,0,.18); color:#e0dcd5; }
+  .field-check span { font-size:14px; }
+  .field-check input { width:auto; accent-color:#d8b76b; }
+  .template-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
+  .preview-shell { min-height:420px; display:flex; align-items:center; justify-content:center; background:radial-gradient(circle at 50% 0%, rgba(216,183,107,.12), transparent 45%), rgba(0,0,0,.22); border-radius:20px; padding:28px; overflow:auto; }
+  .label-preview { background:#fff; color:#151515; border:1px solid #ddd; box-shadow:0 20px 60px rgba(0,0,0,.35); display:flex; align-items:center; gap:4mm; line-height:1.12; font-family:Arial, sans-serif; overflow:hidden; }
+  .label-preview .lp-info { flex:1; min-width:0; display:flex; flex-direction:column; justify-content:center; }
+  .label-preview .lp-row { display:grid; grid-template-columns: var(--label-col-width, 24mm) 1fr; column-gap: var(--column-gap, 2mm); align-items:baseline; }
+  .label-preview .lp-key { font-weight:800; min-width:0; color:#111; }
+  .label-preview .lp-val { font-weight:600; overflow:hidden; }
+  .label-preview .lp-auction { font-weight:900; letter-spacing:.6pt; color:#111; border:1px solid #111; width:max-content; padding:1mm 2mm; border-radius:1mm; margin-bottom: var(--title-data-gap, 0mm); }
+  .label-preview-frame { width:100%; height:380px; border:0; background:transparent; }
+  @media (max-width: 980px) { .template-designer { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- Landing -->
+  <div v-if="view === 'landing'" class="landing">
+    <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 24 24' fill='none' stroke='%23d8b76b' stroke-width='2'%3E%3Cpath d='M6 9V3h12v6'/%3E%3Cpath d='M4 9h16v12H4z'/%3E%3Crect x='8' y='13' width='8' height='1'/%3E%3C/svg%3E" alt="">
+    <h1>EtiquetaLive</h1>
+    <p class="sub">Imprime etiquetas automáticamente al recibir un pedido de subasta en TikTok Shop.<br>Conecta tu cuenta, configura tu impresora y olvídate de hacerlo manualmente.</p>
+    <div class="price-box">
+    <div class="price">0,10€ <small>/pedido</small></div>
+    <p style="color:#f3dfad;margin:8px 0;font-weight:600">Pagas por la facilidad: si no tienes pedidos, no pagas.</p>
+    <p style="color:#a69b86;font-size:14px">Sin cuota mensual. Sin permanencia. Solo 0,10€ por pedido procesado.</p>
+      <button class="btn-gold" @click="view='register'" style="margin-top:16px">Empezar ahora</button>
+    </div>
+    <div class="features">
+      <ul>
+        <li>Detección automática de pedidos de subasta</li>
+        <li>Etiqueta con QR + datos del cliente</li>
+        <li>Funciona con cualquier impresora térmica (Brother, Zebra...)</li>
+        <li>Dashboard con historial y reimpresión</li>
+        <li>No necesita instalación compleja — solo la extensión Chrome</li>
+      </ul>
+    </div>
+    <div style="margin-top:60px;padding-top:24px;border-top:1px solid rgba(216,183,107,.1);font-size:12px;color:#666;text-align:center">
+  <p>EtiquetaLive by AIN TRADING HK LTD</p>
+  <p style="margin-top:4px"><a href="mailto:redes@woow.tienda" style="color:#d8b76b;text-decoration:none">redes@woow.tienda</a></p>
+  <p style="margin-top:12px;word-spacing:8px">
+    <a href="legal/aviso-legal.html" style="color:#666;text-decoration:none">Aviso Legal</a> ·
+    <a href="legal/privacidad.html" style="color:#666;text-decoration:none">Privacidad</a> ·
+    <a href="legal/terminos.html" style="color:#666;text-decoration:none">Términos</a> ·
+    <a href="legal/cookies.html" style="color:#666;text-decoration:none">Cookies</a>
+  </p>
+</div>
+  <p style="color:#a69b86;margin-top:40px">¿Ya tienes cuenta? <a href="#" @click.prevent="view='login'">Iniciar sesión</a></p>
+  </div>
+
+  <!-- Login -->
+  <div v-else-if="view === 'login'" class="auth-box">
+    <div class="logo">◆ EtiquetaLive</div>
+    <h2>Iniciar sesión</h2>
+    <input v-model="loginEmail" type="email" placeholder="Email" @keyup.enter="doLogin">
+    <input v-model="loginPass" type="password" placeholder="Contraseña" @keyup.enter="doLogin">
+    <button class="btn-gold" @click="doLogin" :disabled="loading" style="width:100%;margin-top:8px">{{ loading ? 'Entrando...' : 'Entrar' }}</button>
+    <p class="error" v-if="loginError">{{ loginError }}</p>
+    <p class="switch"><a href="#" @click.prevent="view='forgot'">¿Has olvidado tu contraseña?</a></p>
+    <p class="switch">¿No tienes cuenta? <a href="#" @click.prevent="view='register'">Regístrate</a></p>
+  </div>
+
+  <!-- Forgot password -->
+  <div v-else-if="view === 'forgot'" class="auth-box">
+    <div class="logo">◆ EtiquetaLive</div>
+    <h2>Recuperar contraseña</h2>
+    <p class="desc" style="font-size:14px">Introduce tu email y te enviaremos instrucciones para crear una nueva contraseña.</p>
+    <input v-model="forgotEmail" type="email" placeholder="Email" @keyup.enter="doForgotPassword">
+    <button class="btn-gold" @click="doForgotPassword" :disabled="loading" style="width:100%;margin-top:8px">{{ loading ? 'Enviando...' : 'Enviar instrucciones' }}</button>
+    <p class="success" v-if="forgotMsg">{{ forgotMsg }}</p>
+    <p class="error" v-if="forgotError">{{ forgotError }}</p>
+    <p class="switch"><a href="#" @click.prevent="view='login'">Volver al login</a></p>
+  </div>
+
+  <!-- Reset password -->
+  <div v-else-if="view === 'reset'" class="auth-box">
+    <div class="logo">◆ EtiquetaLive</div>
+    <h2>Nueva contraseña</h2>
+    <input v-model="resetPass" type="password" placeholder="Nueva contraseña" @keyup.enter="doResetPassword">
+    <input v-model="resetPass2" type="password" placeholder="Repetir contraseña" @keyup.enter="doResetPassword">
+    <button class="btn-gold" @click="doResetPassword" :disabled="loading" style="width:100%;margin-top:8px">{{ loading ? 'Guardando...' : 'Guardar contraseña' }}</button>
+    <p class="success" v-if="resetMsg">{{ resetMsg }}</p>
+    <p class="error" v-if="resetError">{{ resetError }}</p>
+    <p class="switch"><a href="#" @click.prevent="view='login'">Volver al login</a></p>
+  </div>
+
+  <!-- Register -->
+  <div v-else-if="view === 'register'" class="auth-box">
+    <div class="logo">◆</div>
+    <h2>Crear cuenta</h2>
+    <input v-model="regNombre" type="text" placeholder="Nombre" @keyup.enter="doRegister">
+    <input v-model="regEmail" type="email" placeholder="Email" @keyup.enter="doRegister">
+    <input v-model="regPass" type="password" placeholder="Contraseña" @keyup.enter="doRegister">
+    <button class="btn-gold" @click="doRegister" :disabled="loading" style="width:100%;margin-top:8px">{{ loading ? 'Creando...' : 'Crear cuenta y empezar prueba' }}</button>
+    <p class="success" v-if="regSuccess">{{ regSuccess }}</p>
+    <p class="error" v-if="regError">{{ regError }}</p>
+    <p class="switch">¿Ya tienes cuenta? <a href="#" @click.prevent="view='login'">Iniciar sesión</a></p>
+  </div>
+
+  <!-- Dashboard -->
+  <div v-else class="dash">
+    <div class="sidebar">
+      <div class="logo">◆</div>
+      <nav>
+        <a href="#" @click.prevent="tab='dashboard'" :class="{active: tab==='dashboard'}">📊 Dashboard</a>
+        <a href="#" @click.prevent="tab='orders'" :class="{active: tab==='orders'}">📦 Pedidos</a>
+        <a href="#" @click.prevent="tab='config'" :class="{active: tab==='config'}">⚙️ Plantilla</a>
+        <a href="#" @click.prevent="tab='profile'" :class="{active: tab==='profile'}">🔑 Perfil</a>
+        <a href="#" @click.prevent="tab='admin'" :class="{active: tab==='admin'}">📊 Admin</a>
+      </nav>
+      <div style="margin-top:auto;padding-top:32px">
+        <div style="font-size:10px;color:#555;padding:8px 0;text-align:center;border-top:1px solid rgba(216,183,107,.05);margin-top:8px">
+  <p>by AIN TRADING HK LTD</p>
+  <p><a href="mailto:redes@woow.tienda" style="color:#d8b76b;text-decoration:none">redes@woow.tienda</a></p>
+  <p style="margin-top:8px;word-spacing:4px">
+    <a href="legal/aviso-legal.html" style="color:#555;text-decoration:none">Aviso Legal</a> ·
+    <a href="legal/privacidad.html" style="color:#555;text-decoration:none">Privacidad</a><br>
+    <a href="legal/terminos.html" style="color:#555;text-decoration:none">Términos</a> ·
+    <a href="legal/cookies.html" style="color:#555;text-decoration:none">Cookies</a>
+  </p>
+</div>
+<button class="btn-dark" @click="logout" style="width:100%">Cerrar sesión</button>
+      </div>
+    </div>
+    <div class="main">
+      <!-- Dashboard tab -->
+      <div v-if="tab === 'dashboard'">
+        <h1>Dashboard</h1>
+        <p class="desc">Resumen de pedidos detectados automáticamente.</p>
+        <div class="stats">
+          <div class="stat-card"><div class="label">Total pedidos</div><div class="value">{{ stats.total }}</div></div>
+          <div class="stat-card"><div class="label">Impresos</div><div class="value">{{ stats.impresos }}</div></div>
+          <div class="stat-card"><div class="label">Pendientes</div><div class="value">{{ stats.pendientes }}</div></div>
+          <div class="stat-card"><div class="label">Reimpresiones</div><div class="value">{{ stats.reimpresos }}</div></div>
+        </div>
+        <h2 style="margin-bottom:16px;font-size:18px">Últimos pedidos</h2>
+        <div class="card" style="overflow:hidden;padding:0">
+          <table>
+            <thead><tr><th>TK</th><th>Pedido</th><th>Cliente</th><th>Precio</th><th>Estado</th><th></th></tr></thead>
+            <tbody v-if="ordenes.length">
+              <tr v-for="o in ordenes.slice(0,10)" :key="o.id_pedido">
+                <td class="text-gold" style="font-weight:700">{{ o.tk }}</td>
+                <td style="font-size:12px;color:#a69b86">{{ o.order_id }}</td>
+                <td>{{ o.cliente }}</td>
+                <td>{{ formatPrice(o.precio, o.moneda) }}</td>
+                <td><span class="badge">{{ o.estado_impresion }}</span></td>
+                <td><button class="btn-dark" style="padding:6px 14px;font-size:12px" @click="reprint(o.tk)">Reimprimir</button></td>
+              </tr>
+            </tbody>
+            <tbody v-else><tr><td colspan="6" style="text-align:center;color:#a69b86;padding:40px">Sin pedidos todavía. Instala la extensión Chrome y conéctala con tu API key.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Orders tab -->
+      <div v-else-if="tab === 'orders'">
+        <h1>Pedidos</h1>
+        <p class="desc">Historial completo de pedidos detectados. Máximo exportable/visible: últimos 3 meses.</p>
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;align-items:end">
+            <div><label>Desde</label><input type="date" v-model="userFilterFrom" @change="enforceUserMaxRange"></div>
+            <div><label>Hasta</label><input type="date" v-model="userFilterTo" @change="enforceUserMaxRange"></div>
+            <div><label>Buscar</label><input type="text" v-model="userSearch" placeholder="TK, pedido, cliente"></div>
+            <div><button class="btn-gold" style="width:100%" @click="exportCsv('user')">Exportar CSV</button></div>
+            <div><button class="btn-dark" style="width:100%" @click="clearUserFilters">Limpiar filtros</button></div>
+          </div>
+          <div style="margin-top:12px;font-size:12px;color:#a69b86">Campos exportación:</div>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;font-size:12px;color:#a69b86">
+            <label v-for="f in userExportFields" :key="f.key" style="width:auto"><input type="checkbox" v-model="f.enabled" style="width:auto;margin-right:4px">{{ f.label }}</label>
+          </div>
+        </div>
+        <div class="card" style="overflow:hidden;padding:0">
+          <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th class="sortable" @click="setSort('user','tk')">TK<span class="sort-arrow">{{ sortArrow('user','tk') }}</span></th><th class="sortable" @click="setSort('user','order_id')">ID Pedido<span class="sort-arrow">{{ sortArrow('user','order_id') }}</span></th><th class="sortable" @click="setSort('user','cliente')">Cliente<span class="sort-arrow">{{ sortArrow('user','cliente') }}</span></th><th class="sortable" @click="setSort('user','precio')">Precio<span class="sort-arrow">{{ sortArrow('user','precio') }}</span></th><th class="sortable" @click="setSort('user','fecha_pedido')">Fecha<span class="sort-arrow">{{ sortArrow('user','fecha_pedido') }}</span></th><th class="sortable" @click="setSort('user','estado_impresion')">Estado<span class="sort-arrow">{{ sortArrow('user','estado_impresion') }}</span></th><th class="sortable" @click="setSort('user','reimpresiones')">Reimp.<span class="sort-arrow">{{ sortArrow('user','reimpresiones') }}</span></th><th></th></tr></thead>
+            <tbody v-if="displayedOrdenes.length">
+              <tr v-for="o in displayedOrdenes" :key="o.id_pedido">
+                <td class="text-gold" style="font-weight:700">{{ o.tk }}</td>
+                <td style="font-size:12px;color:#a69b86">{{ o.order_id }}</td>
+                <td>{{ o.cliente }}</td>
+                <td>{{ formatPrice(o.precio, o.moneda) }}</td>
+                <td style="font-size:12px">{{ formatDate(o.fecha_pedido || o.fecha_detectado) }}</td>
+                <td><span class="badge">{{ o.estado_impresion }}</span></td>
+                <td>{{ o.reimpresiones || 0 }}</td>
+                <td>
+                  <button class="btn-dark" style="padding:6px 14px;font-size:12px" @click="reprint(o.tk)">Reimprimir</button>
+                  <a :href="'/api/v1/label/'+o.tk+'.html'" target="_blank" class="btn-dark" style="padding:6px 14px;font-size:12px;display:inline-block;margin-left:4px;text-decoration:none">Ver</a>
+                </td>
+              </tr>
+            </tbody>
+            <tbody v-else><tr><td colspan="8" style="text-align:center;color:#a69b86;padding:40px">Sin pedidos registrados.</td></tr></tbody>
+          </table>
+          </div>
+        </div>
+        <div v-if="loadingOrders" class="loader">Cargando pedidos...</div>
+      </div>
+
+      <!-- Config tab -->
+      <div v-else-if="tab === 'config'">
+        <h1>Plantilla de etiqueta</h1>
+        <p class="desc">Elige qué datos salen impresos y previsualiza la etiqueta en tiempo real.</p>
+        <div class="template-designer">
+          <div class="card">
+            <h2 style="font-size:18px;margin-bottom:14px;color:#f3dfad">Campos a imprimir</h2>
+            <div class="field-checks">
+              <label class="field-check"><span>Cliente</span><input type="checkbox" v-model.number="configForm.show_cliente" :true-value="1" :false-value="0"></label>
+              <label class="field-check"><span>Nombre TikTok</span><input type="checkbox" v-model.number="configForm.show_tiktok_name" :true-value="1" :false-value="0"></label>
+              <label class="field-check"><span>Nº Pedido</span><input type="checkbox" v-model.number="configForm.show_order_id" :true-value="1" :false-value="0"></label>
+              <label class="field-check"><span>Precio</span><input type="checkbox" v-model.number="configForm.show_price" :true-value="1" :false-value="0"></label>
+              <label class="field-check"><span>Subasta</span><input type="checkbox" v-model.number="configForm.show_auction" :true-value="1" :false-value="0"></label>
+              <label class="field-check"><span>Fecha y hora</span><input type="checkbox" v-model.number="configForm.show_datetime" :true-value="1" :false-value="0"></label>
+              <label class="field-check"><span>QR</span><input type="checkbox" v-model.number="configForm.show_qr" :true-value="1" :false-value="0"></label>
+            </div>
+
+            <h2 style="font-size:18px;margin:24px 0 14px;color:#f3dfad">Impresión automática</h2>
+            <div class="card" style="background:rgba(0,0,0,.18);margin-bottom:18px">
+              <label class="field-check" style="justify-content:space-between;width:100%"><span>Imprimir automáticamente al detectar pedido Live</span><input type="checkbox" v-model.number="configForm.auto_print_enabled" :true-value="1" :false-value="0"></label>
+              <p style="font-size:12px;color:#a69b86;margin-top:8px;line-height:1.5">Activado: la extensión abre el diálogo de impresión automáticamente. Desactivado: detecta el pedido, pero no lanza impresión automática.</p>
+              <div style="margin-top:14px"><label>Refresco Seller Orders (segundos)</label><input v-model.number="configForm.seller_refresh_seconds" type="number" min="15" max="300" step="5"></div>
+              <p style="font-size:12px;color:#a69b86;margin-top:8px;line-height:1.5">Recomendado: 15s durante Live. Mínimo 15s para evitar bloqueos o carga excesiva de TikTok.</p>
+            </div>
+
+            <h2 style="font-size:18px;margin:24px 0 14px;color:#f3dfad">Orden de campos</h2>
+            <div class="config-grid">
+              <div><label>Subasta</label><input v-model.number="configForm.order_auction" type="number" min="1" max="6" step="1"></div>
+              <div><label>Cliente</label><input v-model.number="configForm.order_cliente" type="number" min="1" max="6" step="1"></div>
+              <div><label>Nombre TikTok</label><input v-model.number="configForm.order_tiktok_name" type="number" min="1" max="6" step="1"></div>
+              <div><label>Nº Pedido</label><input v-model.number="configForm.order_order_id" type="number" min="1" max="6" step="1"></div>
+              <div><label>Precio</label><input v-model.number="configForm.order_price" type="number" min="1" max="6" step="1"></div>
+              <div><label>Fecha y hora</label><input v-model.number="configForm.order_datetime" type="number" min="1" max="6" step="1"></div>
+            </div>
+
+            <h2 style="font-size:18px;margin:24px 0 14px;color:#f3dfad">Personalización</h2>
+            <div class="config-grid">
+              <div><label>Tamaño etiqueta</label>
+                <select v-model="selectedLabelSize" @change="applyLabelSize">
+                  <option value="60x29">60 × 29 mm</option>
+                  <option value="80x50">80 × 50 mm</option>
+                  <option value="100x150">100 × 150 mm</option>
+                  <option value="custom">Personalizado</option>
+                </select>
+              </div>
+              <div><label>Tamaño título/Subasta (pt)</label><input v-model.number="configForm.title_font_pt" type="number" min="5" max="32" step="0.5"></div>
+              <div><label>Tamaño Cliente (pt)</label><input v-model.number="configForm.customer_font_pt" type="number" min="5" max="32" step="0.5"></div>
+              <div><label>Tamaño Nombre TikTok (pt)</label><input v-model.number="configForm.tiktok_font_pt" type="number" min="5" max="32" step="0.5"></div>
+              <div><label>Tamaño Nº Pedido (pt)</label><input v-model.number="configForm.order_font_pt" type="number" min="5" max="32" step="0.5"></div>
+              <div><label>Tamaño Precio (pt)</label><input v-model.number="configForm.price_font_pt" type="number" min="5" max="32" step="0.5"></div>
+              <div><label>Tamaño Fecha y hora (pt)</label><input v-model.number="configForm.date_font_pt" type="number" min="5" max="32" step="0.5"></div>
+              <div><label>Tamaño QR (mm)</label><input v-model.number="configForm.qr_size_mm" type="number" min="8" max="60" step="0.5"></div>
+              <div><label>Separación entre líneas (mm)</label><input v-model.number="configForm.line_spacing_mm" type="number" min="0" max="12" step="0.2"></div>
+              <div><label>Separación título → datos (mm)</label><input v-model.number="configForm.title_data_gap_mm" type="number" min="0" max="20" step="0.2"></div>
+              <div><label>Separación entre letras (pt)</label><input v-model.number="configForm.letter_spacing_pt" type="number" min="-1" max="5" step="0.1"></div>
+              <div><label>Ancho columna izquierda (mm)</label><input v-model.number="configForm.label_col_width_mm" type="number" min="10" max="60" step="0.5"></div>
+              <div><label>Separación entre columnas (mm)</label><input v-model.number="configForm.column_gap_mm" type="number" min="0" max="20" step="0.5"></div>
+              <div><label>Márgenes internos (mm)</label><input v-model.number="configForm.padding_mm" type="number" min="0" max="12" step="0.2"></div>
+              <div><label>Ancho (mm)</label><input v-model.number="configForm.label_width_mm" type="number" min="20"></div>
+              <div><label>Alto (mm)</label><input v-model.number="configForm.label_height_mm" type="number" min="20"></div>
+            </div>
+            <h2 style="font-size:18px;margin:24px 0 14px;color:#f3dfad">Plantillas guardadas</h2>
+            <div class="config-grid">
+              <div><label>Nombre plantilla</label><input v-model="templateName" type="text" placeholder="Ej. 60x29 subasta"></div>
+              <div><label>Cargar plantilla</label>
+                <select v-model="selectedTemplateId" @change="loadSelectedTemplate">
+                  <option value="">Seleccionar...</option>
+                  <option v-for="t in labelTemplates" :key="t.id_template" :value="t.id_template">{{ t.nombre }}{{ Number(t.is_default) === 1 ? ' · defecto' : '' }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="template-actions">
+              <button class="btn-gold" @click="saveConfig" :disabled="saving">{{ saving ? 'Guardando...' : 'Guardar plantilla actual' }}</button>
+              <button class="btn-dark" @click="saveAsTemplate" :disabled="saving">Guardar como nueva</button>
+              <button class="btn-dark" @click="updateSelectedTemplate" :disabled="saving || !selectedTemplateId">Actualizar seleccionada</button>
+              <button class="btn-dark" @click="setSelectedDefaultTemplate" :disabled="saving || !selectedTemplateId">Usar seleccionada por defecto</button>
+              <button class="btn-dark" @click="printTestLabel">Imprimir prueba</button>
+            </div>
+            <p class="success" v-if="configMsg">{{ configMsg }}</p>
+          </div>
+
+          <div class="card">
+            <h2 style="font-size:18px;margin-bottom:14px;color:#f3dfad">Vista previa en tiempo real</h2>
+            <div class="preview-shell">
+              <iframe class="label-preview-frame" :srcdoc="previewLabelHtml" title="Vista previa de etiqueta"></iframe>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Profile tab -->
+      <div v-else-if="tab === 'profile'">
+        <h1>Perfil</h1>
+        <p class="desc">Tu API key y estado de suscripción.</p>
+        <div class="card" style="max-width:600px">
+          <div style="margin-bottom:20px">
+            <div style="font-size:12px;color:#a69b86;margin-bottom:4px">Email</div>
+            <div style="font-size:16px">{{ perfil.email }}</div>
+          </div>
+          <div style="margin-bottom:20px">
+            <div style="font-size:12px;color:#a69b86;margin-bottom:4px">API Key</div>
+            <div class="api-key-box">
+              <span style="flex:1">{{ showApiKey ? perfil.api_key : '••••••••••••••••' }}</span>
+              <button class="btn-dark" style="padding:6px 14px;font-size:12px" @click="showApiKey=!showApiKey">{{ showApiKey ? 'Ocultar' : 'Mostrar' }}</button>
+              <button class="btn-dark" style="padding:6px 14px;font-size:12px" @click="copyKey">Copiar</button>
+            </div>
+          </div>
+          <div style="margin-bottom:20px">
+            <div style="font-size:12px;color:#a69b86;margin-bottom:4px">Saldo disponible</div>
+            <div style="font-size:24px;font-weight:700;color:#43d08a">{{ perfil.creditos ? (perfil.creditos / 100).toFixed(2) + "€" : "0,00€" }} <span style="font-size:14px;font-weight:400;color:#a69b86">({{ perfil.creditos || 0 }} pedidos)</span></div>
+          </div>
+          <div style="margin-bottom:20px">
+            <div style="font-size:12px;color:#a69b86;margin-bottom:4px">Suscripción</div>
+            <div><span class="badge" :class="perfil.suscripcion_activa ? 'text-green' : ''">{{ perfil.suscripcion_activa ? 'Activa' : 'Inactiva' }}</span></div>
+          </div>
+          <div>
+            <div style="font-size:12px;color:#a69b86;margin-bottom:4px">Instrucciones para la extensión Chrome</div>
+            <div style="background:rgba(0,0,0,.3);border-radius:12px;padding:16px;font-size:13px;line-height:1.6">
+              1. Instala la extensión desde Chrome Web Store<br>
+              2. Haz clic en el icono de la extensión<br>
+              3. Pega esta API key en el campo correspondiente<br>
+              4. Asegúrate de que tu impresora térmica esté configurada como predeterminada en Windows
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Admin tab -->
+      <div v-else-if="tab === 'admin'">
+        <h1>Admin</h1>
+        <p class="desc">Panel de administracion. Usuarios y pedidos de todos los clientes.</p>
+        <div style="display:flex;gap:12px;margin-bottom:20px">
+          <div class="stat-card"><div class="label">Usuarios del filtro</div><div class="value">{{ adminFilteredSummary.total_usuarios || 0 }}</div></div>
+          <div class="stat-card"><div class="label">Pedidos del filtro</div><div class="value">{{ adminFilteredSummary.total_pedidos || 0 }}</div></div>
+          <div class="stat-card"><div class="label">Impresiones cobrables</div><div class="value">{{ adminFilteredSummary.total_impresiones || 0 }}</div></div>
+          <div class="stat-card"><div class="label">Facturable</div><div class="value">{{ formatCents(adminFilteredSummary.total_facturable_cents || 0) }}</div></div>
+        </div>
+        <div class="tabs">
+          <button :class="{active: adminTab==='usuarios'}" @click="adminTab='usuarios'">Usuarios</button>
+          <button :class="{active: adminTab==='pedidos'}" @click="adminTab='pedidos'">Pedidos</button>
+        </div>
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;align-items:end">
+            <div><label>Cliente</label><select v-model="adminUserFilter"><option value="">Todos</option><option v-for="u in adminUsuarios" :key="u.id_usuario" :value="u.email">{{ u.email }}</option></select></div>
+            <div><label>Desde</label><input type="date" v-model="adminFilterFrom"></div>
+            <div><label>Hasta</label><input type="date" v-model="adminFilterTo"></div>
+            <div><label>Buscar</label><input type="text" v-model="adminSearch" placeholder="TK, pedido, cliente"></div>
+            <div><button class="btn-gold" style="width:100%" @click="exportCsv(adminTab === 'usuarios' ? 'adminUsers' : 'adminOrders')">Exportar CSV</button></div>
+            <div><button class="btn-dark" style="width:100%" @click="clearAdminFilters">Limpiar filtros</button></div>
+          </div>
+          <div style="margin-top:12px;font-size:12px;color:#a69b86">Campos exportación:</div>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;font-size:12px;color:#a69b86">
+            <label v-for="f in activeAdminExportFields" :key="f.key" style="width:auto"><input type="checkbox" v-model="f.enabled" style="width:auto;margin-right:4px">{{ f.label }}</label>
+          </div>
+        </div>
+        <div v-if="adminTab === 'usuarios'" class="card" style="overflow:hidden;padding:0">
+          <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th class="sortable" @click="setSort('adminUsers','email')">Email<span class="sort-arrow">{{ sortArrow('adminUsers','email') }}</span></th><th class="sortable" @click="setSort('adminUsers','nombre')">Nombre<span class="sort-arrow">{{ sortArrow('adminUsers','nombre') }}</span></th><th class="sortable" @click="setSort('adminUsers','pedidos_detectados')">Pedidos<span class="sort-arrow">{{ sortArrow('adminUsers','pedidos_detectados') }}</span></th><th class="sortable" @click="setSort('adminUsers','impresiones_cobrables')">Impresiones<span class="sort-arrow">{{ sortArrow('adminUsers','impresiones_cobrables') }}</span></th><th class="sortable" @click="setSort('adminUsers','reimpresiones')">Reimp.<span class="sort-arrow">{{ sortArrow('adminUsers','reimpresiones') }}</span></th><th class="sortable" @click="setSort('adminUsers','importe_cents')">Facturable<span class="sort-arrow">{{ sortArrow('adminUsers','importe_cents') }}</span></th><th class="sortable" @click="setSort('adminUsers','suscripcion_activa')">Activo<span class="sort-arrow">{{ sortArrow('adminUsers','suscripcion_activa') }}</span></th><th class="sortable" @click="setSort('adminUsers','fecha_registro')">Registro<span class="sort-arrow">{{ sortArrow('adminUsers','fecha_registro') }}</span></th></tr></thead>
+            <tbody v-if="displayedAdminUsuarios.length">
+              <tr v-for="u in displayedAdminUsuarios" :key="u.id_usuario">
+                <td>{{ u.email }}</td>
+                <td>{{ u.nombre }}</td>
+                <td>{{ u.pedidos_detectados || 0 }}</td>
+                <td class="text-gold">{{ u.impresiones_cobrables || 0 }}</td>
+                <td>{{ u.reimpresiones || 0 }}</td>
+                <td class="text-gold">{{ formatCents(u.importe_cents || 0) }}</td>
+                <td><span class="badge">{{ u.suscripcion_activa ? 'Si' : 'No' }}</span></td>
+                <td style="font-size:12px">{{ u.fecha_registro }}</td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+        <div v-if="adminTab === 'pedidos'" class="card" style="overflow:hidden;padding:0">
+          <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th class="sortable" @click="setSort('adminOrders','tk')">TK<span class="sort-arrow">{{ sortArrow('adminOrders','tk') }}</span></th><th class="sortable" @click="setSort('adminOrders','order_id')">Pedido<span class="sort-arrow">{{ sortArrow('adminOrders','order_id') }}</span></th><th class="sortable" @click="setSort('adminOrders','cliente')">Cliente<span class="sort-arrow">{{ sortArrow('adminOrders','cliente') }}</span></th><th class="sortable" @click="setSort('adminOrders','precio')">Precio<span class="sort-arrow">{{ sortArrow('adminOrders','precio') }}</span></th><th class="sortable" @click="setSort('adminOrders','estado_impresion')">Estado<span class="sort-arrow">{{ sortArrow('adminOrders','estado_impresion') }}</span></th><th class="sortable" @click="setSort('adminOrders','impresiones_cobrables')">Impr.<span class="sort-arrow">{{ sortArrow('adminOrders','impresiones_cobrables') }}</span></th><th class="sortable" @click="setSort('adminOrders','reimpresiones')">Reimp.<span class="sort-arrow">{{ sortArrow('adminOrders','reimpresiones') }}</span></th><th class="sortable" @click="setSort('adminOrders','impresiones_cobrables')">Facturable<span class="sort-arrow">{{ sortArrow('adminOrders','impresiones_cobrables') }}</span></th><th class="sortable" @click="setSort('adminOrders','usuario')">Usuario<span class="sort-arrow">{{ sortArrow('adminOrders','usuario') }}</span></th><th class="sortable" @click="setSort('adminOrders','fecha_pedido')">Fecha pedido<span class="sort-arrow">{{ sortArrow('adminOrders','fecha_pedido') }}</span></th></tr></thead>
+            <tbody v-if="displayedAdminPedidos.length">
+              <tr v-for="p in displayedAdminPedidos" :key="p.tk">
+                <td class="text-gold">{{ p.tk }}</td>
+                <td style="font-size:12px;color:#a69b86">{{ p.order_id }}</td>
+                <td>{{ p.cliente }}</td>
+                <td>{{ formatPrice(p.precio, p.moneda) }}</td>
+                <td><span class="badge">{{ p.estado_impresion }}</span></td>
+                <td class="text-gold">{{ p.impresiones_cobrables || 0 }}</td>
+                <td>{{ p.reimpresiones || 0 }}</td>
+                <td class="text-gold">{{ formatCents((p.impresiones_cobrables || 0) * 10) }}</td>
+                <td style="font-size:12px">{{ p.usuario }}</td>
+                <td style="font-size:12px">{{ formatDate(p.fecha_pedido || p.fecha_detectado) }}</td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+      </div>
+
+  </div>
+</div>
+
+<script>
+const BASE = window.location.origin + (window.location.pathname.startsWith("/etiquetalive") ? "/etiquetalive" : "");
+const api = axios.create({ timeout: 10000 });
+let token = localStorage.getItem('el_token');
+
+const app = Vue.createApp({
+  data() {
+    return {
+      view: token ? 'dash' : 'landing',
+      tab: 'dashboard',
+      // Auth
+      loginEmail: '', loginPass: '', loginError: '',
+      forgotEmail: '', forgotMsg: '', forgotError: '',
+      resetToken: '', resetPass: '', resetPass2: '', resetMsg: '', resetError: '',
+      regNombre: '', regEmail: '', regPass: '', regError: '', regSuccess: '',
+      loading: false,
+      // Dashboard
+      stats: { total: 0, impresos: 0, pendientes: 0, reimpresos: 0 },
+      ordenes: [],
+      loadingOrders: false,
+      ordersAutoRefreshTimer: null,
+      lastOrdersSignature: '',
+      // Config
+      configForm: { label_width_mm: 60, label_height_mm: 29, orientation: 'landscape', qr_size_mm: 13, title_font_pt: 9, tk_font_pt: 7, customer_font_pt: 8.4, tiktok_font_pt: 8.4, order_font_pt: 7, price_font_pt: 10.5, date_font_pt: 5.4, show_tk: 1, show_title: 1, show_date: 1, show_cliente: 1, show_tiktok_name: 1, show_order_id: 1, show_price: 1, show_auction: 1, show_datetime: 1, show_qr: 1, order_auction: 1, order_cliente: 2, order_tiktok_name: 3, order_order_id: 4, order_price: 5, order_datetime: 6, label_font_pt: 10, default_template: 1, line_spacing_mm: 3, title_data_gap_mm: 1, letter_spacing_pt: 0, label_col_width_mm: 24, column_gap_mm: 2, padding_mm: 4, auto_print_enabled: 1, seller_refresh_seconds: 15 },
+      selectedLabelSize: '60x29',
+      sampleLabel: { cliente: 'Cliente Demo', tiktok: '@nombre_tiktok', order_id: '577315940012345678', precio: '29.99 EUR', fecha: '19/05/2026 14:59' },
+      saving: false, configMsg: '',
+      labelTemplates: [], selectedTemplateId: '', templateName: 'Principal',
+      // Profile
+      perfil: {},
+      showApiKey: false,
+      adminTab: 'usuarios',
+      adminStats: {},
+      adminUsuarios: [],
+      adminPedidos: [],
+      userFilterFrom: '', userFilterTo: '', userSearch: '', userSortKey: 'fecha_pedido', userSortDir: 'desc',
+      adminFilterFrom: '', adminFilterTo: '', adminSearch: '', adminUserFilter: '', adminSortKey: 'fecha_pedido', adminSortDir: 'desc', adminUserSortKey: 'email', adminUserSortDir: 'asc',
+      userExportFields: [
+        { key:'tk', label:'TK', enabled:true }, { key:'order_id', label:'ID pedido', enabled:true }, { key:'cliente', label:'Cliente', enabled:true },
+        { key:'precio', label:'Precio', enabled:true }, { key:'fecha_pedido', label:'Fecha pedido', enabled:true }, { key:'estado_impresion', label:'Estado', enabled:true }, { key:'reimpresiones', label:'Reimp.', enabled:true }
+      ],
+      adminOrderExportFields: [
+        { key:'tk', label:'TK', enabled:true }, { key:'order_id', label:'Pedido', enabled:true }, { key:'cliente', label:'Cliente', enabled:true }, { key:'precio', label:'Precio', enabled:true },
+        { key:'estado_impresion', label:'Estado', enabled:true }, { key:'impresiones_cobrables', label:'Impresiones', enabled:true }, { key:'reimpresiones', label:'Reimp.', enabled:true }, { key:'importe', label:'Facturable', enabled:true }, { key:'usuario', label:'Usuario', enabled:true }, { key:'fecha_pedido', label:'Fecha pedido', enabled:true }
+      ],
+      adminUserExportFields: [
+        { key:'email', label:'Email', enabled:true }, { key:'nombre', label:'Nombre', enabled:true }, { key:'pedidos_detectados', label:'Pedidos', enabled:true },
+        { key:'impresiones_cobrables', label:'Impresiones', enabled:true }, { key:'reimpresiones', label:'Reimp.', enabled:true }, { key:'importe', label:'Facturable', enabled:true }, { key:'fecha_registro', label:'Registro', enabled:true }
+      ],
+    };
+  },
+
+  computed: {
+    activeAdminExportFields() { return this.adminTab === 'usuarios' ? this.adminUserExportFields : this.adminOrderExportFields; },
+    hasActiveLabelFields() { return ['show_cliente','show_tiktok_name','show_order_id','show_price','show_auction','show_datetime','show_qr'].some(k => Number(this.configForm[k]) === 1); },
+    labelPreviewStyle() {
+      const maxW = 520, maxH = 360;
+      const w = Math.max(Number(this.configForm.label_width_mm) || 60, 20);
+      const h = Math.max(Number(this.configForm.label_height_mm) || 29, 20);
+      const scale = Math.min(maxW / w, maxH / h, 5);
+      return { width: (w * scale) + 'px', height: (h * scale) + 'px', padding: (Number(this.configForm.padding_mm) || 0) + 'mm', letterSpacing: (Number(this.configForm.letter_spacing_pt) || 0) + 'pt', '--label-col-width': (Number(this.configForm.label_col_width_mm) || 24) + 'mm', '--column-gap': (Number(this.configForm.column_gap_mm) || 2) + 'mm', '--title-data-gap': (Number(this.configForm.title_data_gap_mm) || 0) + 'mm' };
+    },
+    previewLabelHtml() { return this.buildLabelHtml({ print: false }); },
+    displayedOrdenes() { return this.sortRows(this.filterOrders(this.ordenes, this.userFilterFrom, this.userFilterTo, this.userSearch), this.userSortKey, this.userSortDir); },
+    displayedAdminPedidos() { return this.sortRows(this.filterOrders(this.adminPedidos.filter(p => !this.adminUserFilter || p.usuario === this.adminUserFilter), this.adminFilterFrom, this.adminFilterTo, this.adminSearch), this.adminSortKey, this.adminSortDir); },
+    displayedAdminUsuarios() {
+      const orders = this.filterOrders(this.adminPedidos.filter(p => !this.adminUserFilter || p.usuario === this.adminUserFilter), this.adminFilterFrom, this.adminFilterTo, '');
+      const byEmail = {};
+      for (const o of orders) {
+        const email = o.usuario || '';
+        if (!byEmail[email]) byEmail[email] = { pedidos_detectados: 0, impresiones_cobrables: 0, reimpresiones: 0, importe_cents: 0 };
+        byEmail[email].pedidos_detectados += 1;
+        byEmail[email].impresiones_cobrables += Number(o.impresiones_cobrables || 0);
+        byEmail[email].reimpresiones += Number(o.reimpresiones || 0);
+        byEmail[email].importe_cents += Number(o.impresiones_cobrables || 0) * 10;
+      }
+      let rows = this.adminUsuarios.filter(u => !this.adminUserFilter || u.email === this.adminUserFilter).map(u => ({ ...u, ...(byEmail[u.email] || { pedidos_detectados: 0, impresiones_cobrables: 0, reimpresiones: 0, importe_cents: 0 }) }));
+      if (this.adminSearch) { const q = this.adminSearch.toLowerCase(); rows = rows.filter(u => String(u.email||'').toLowerCase().includes(q) || String(u.nombre||'').toLowerCase().includes(q)); }
+      return this.sortRows(rows, this.adminUserSortKey, this.adminUserSortDir);
+    },
+    adminFilteredSummary() {
+      const rows = this.displayedAdminUsuarios;
+      const totalImpresiones = rows.reduce((sum, u) => sum + Number(u.impresiones_cobrables || 0), 0);
+      return {
+        total_usuarios: rows.length,
+        total_pedidos: rows.reduce((sum, u) => sum + Number(u.pedidos_detectados || 0), 0),
+        total_impresiones: totalImpresiones,
+        total_reimpresiones: rows.reduce((sum, u) => sum + Number(u.reimpresiones || 0), 0),
+        total_facturable_cents: totalImpresiones * 10,
+      };
+    },
+  },
+  methods: {
+
+    parseDateValue(v) {
+      if (!v) return null;
+      const s = String(v).trim();
+      const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+      if (m) return new Date(Number(m[3]), Number(m[2])-1, Number(m[1]), Number(m[4]||0), Number(m[5]||0), Number(m[6]||0));
+      const d = new Date(s); return Number.isNaN(d.getTime()) ? null : d;
+    },
+    rowDate(row) { return this.parseDateValue(row.fecha_pedido || row.fecha_detectado || row.fecha_registro); },
+    filterOrders(rows, from, to, search) {
+      let out = Array.from(rows || []);
+      const fd = from ? new Date(from + 'T00:00:00') : null;
+      const td = to ? new Date(to + 'T23:59:59') : null;
+      if (fd) out = out.filter(r => { const d = this.rowDate(r); return d && d >= fd; });
+      if (td) out = out.filter(r => { const d = this.rowDate(r); return d && d <= td; });
+      if (search) { const q = search.toLowerCase(); out = out.filter(r => [r.tk,r.order_id,r.cliente,r.usuario,r.estado_impresion].some(v => String(v||'').toLowerCase().includes(q))); }
+      return out;
+    },
+    clearAdminFilters() {
+      this.adminUserFilter = '';
+      this.adminFilterFrom = '';
+      this.adminFilterTo = '';
+      this.adminSearch = '';
+    },
+    clearUserFilters() {
+      this.userFilterFrom = '';
+      this.userFilterTo = '';
+      this.userSearch = '';
+    },
+    sortRows(rows, key, dir) {
+      const mult = dir === 'desc' ? -1 : 1;
+      return Array.from(rows || []).sort((a,b) => {
+        let av = key && key.includes('fecha') ? this.rowDate(a)?.getTime() : a[key];
+        let bv = key && key.includes('fecha') ? this.rowDate(b)?.getTime() : b[key];
+        if (key === 'importe') { av = Number(a.importe_cents || (a.impresiones_cobrables || 0) * 10); bv = Number(b.importe_cents || (b.impresiones_cobrables || 0) * 10); }
+        if (!isNaN(Number(av)) && !isNaN(Number(bv))) return (Number(av) - Number(bv)) * mult;
+        return String(av ?? '').localeCompare(String(bv ?? ''), 'es') * mult;
+      });
+    },
+    sortArrow(scope, key) {
+      const keyProp = scope === 'user' ? 'userSortKey' : (scope === 'adminUsers' ? 'adminUserSortKey' : 'adminSortKey');
+      const dirProp = scope === 'user' ? 'userSortDir' : (scope === 'adminUsers' ? 'adminUserSortDir' : 'adminSortDir');
+      return this[keyProp] === key ? (this[dirProp] === 'asc' ? '↑' : '↓') : '';
+    },
+    fieldFontStyle(key) {
+      return { fontSize: (Number(this.configForm[key]) || 9) + 'pt' };
+    },
+    setSort(scope, key) {
+      const keyProp = scope === 'user' ? 'userSortKey' : (scope === 'adminUsers' ? 'adminUserSortKey' : 'adminSortKey');
+      const dirProp = scope === 'user' ? 'userSortDir' : (scope === 'adminUsers' ? 'adminUserSortDir' : 'adminSortDir');
+      if (this[keyProp] === key) this[dirProp] = this[dirProp] === 'asc' ? 'desc' : 'asc'; else { this[keyProp] = key; this[dirProp] = 'asc'; }
+    },
+    syncSelectedLabelSize() {
+      const w = Number(this.configForm.label_width_mm), h = Number(this.configForm.label_height_mm);
+      const key = `${w}x${h}`;
+      this.selectedLabelSize = ['60x29','80x50','100x150'].includes(key) ? key : 'custom';
+    },
+    applyLabelSize() {
+      if (this.selectedLabelSize === 'custom') return;
+      const [w, h] = this.selectedLabelSize.split('x').map(Number);
+      this.configForm.label_width_mm = w;
+      this.configForm.label_height_mm = h;
+    },
+    escapeLabelHtml(v) {
+      return String(v ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' }[ch]));
+    },
+    buildLabelHtml({ print = false } = {}) {
+      const c = this.configForm;
+      const sample = this.sampleLabel || {};
+      const w = Math.max(Number(c.label_width_mm) || 60, 20);
+      const h = Math.max(Number(c.label_height_mm) || 29, 20);
+      const qrSize = Math.max(Number(c.qr_size_mm) || 13, 8);
+      const pad = Number(c.padding_mm ?? 4);
+      const labelColWidthMm = Number(c.label_col_width_mm || 24);
+      const columnGapMm = Number(c.column_gap_mm ?? 2);
+      const lineSpacingMm = Number(c.line_spacing_mm ?? 3);
+      const letterSpacingPt = Number(c.letter_spacing_pt || 0);
+      const titleDataGapMm = Number(c.title_data_gap_mm || 0);
+      const orderId = String(sample.order_id || 'PEDIDO-TEST-0001');
+      const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=0&data=${encodeURIComponent(orderId)}`;
+      const rows = [
+        { key: 'auction', enabled: Number(c.show_auction) === 1, order: Number(c.order_auction || 1), html: '<div class="title">SUBASTA</div>' },
+        { key: 'cliente', enabled: Number(c.show_cliente) === 1, order: Number(c.order_cliente || 2), html: `<div class="row cliente autofit-row"><b>Cliente</b><span class="autofit-text">${this.escapeLabelHtml(sample.cliente)}</span></div>` },
+        { key: 'tiktok', enabled: Number(c.show_tiktok_name) === 1, order: Number(c.order_tiktok_name || 3), html: `<div class="row tiktok autofit-row"><b>TikTok</b><span class="autofit-text">${this.escapeLabelHtml(sample.tiktok)}</span></div>` },
+        { key: 'order', enabled: Number(c.show_order_id) === 1, order: Number(c.order_order_id || 4), html: `<div class="row order"><b>Nº Pedido</b><span>${this.escapeLabelHtml(orderId)}</span></div>` },
+        { key: 'price', enabled: Number(c.show_price) === 1, order: Number(c.order_price || 5), html: `<div class="row price"><b>Precio</b><span>${this.escapeLabelHtml(sample.precio || '29.99 EUR')}</span></div>` },
+        { key: 'fecha', enabled: Number(c.show_datetime) === 1, order: Number(c.order_datetime || 6), html: `<div class="row fecha"><b>Fecha</b><span>${this.escapeLabelHtml(sample.fecha)}</span></div>` }
+      ].filter(r => r.enabled).sort((a,b) => a.order - b.order).map(r => r.html);
+      const autoPrintScript = print ? '<script>setTimeout(()=>{window.focus();window.print();},250)<\/script>' : '';
+      return `<!doctype html><html><head><meta charset="utf-8"><style>
+@page{size:${w}mm ${h}mm;margin:0}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;font-family:Arial,sans-serif;color:#111;background:transparent}
+body{display:flex;align-items:center;justify-content:center}
+.label{width:${w}mm;height:${h}mm;padding:${pad}mm;display:flex;align-items:center;gap:1mm;overflow:hidden;letter-spacing:${letterSpacingPt}pt;background:#fff;color:#111;line-height:1.12}
+.info{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:${lineSpacingMm}mm;overflow:hidden}
+.row{display:grid;grid-template-columns:${labelColWidthMm}mm 1fr;column-gap:${columnGapMm}mm;align-items:baseline;min-width:0}
+.row b{min-width:0;font-weight:900;color:#111}
+.row span{font-weight:600;overflow:hidden;white-space:nowrap}
+.autofit-text{display:block;min-width:0}
+.title{display:block;width:max-content;border:1px solid #111;border-radius:1mm;padding:1mm 2mm;font-size:${c.title_font_pt || 9}pt;font-weight:900;letter-spacing:${Math.max(Number(c.letter_spacing_pt || 0),0.6)}pt;margin-bottom:${titleDataGapMm}mm}
+.cliente{font-size:${c.customer_font_pt || 8.4}pt}.tiktok{font-size:${c.tiktok_font_pt || c.customer_font_pt || 8.4}pt}.order{font-size:${c.order_font_pt || 7}pt}.price{font-size:${c.price_font_pt || 10.5}pt}.fecha{font-size:${c.date_font_pt || 5.4}pt}
+.qr-area{flex:0 0 auto;width:${qrSize}mm;height:${qrSize}mm;display:flex;align-items:center;justify-content:center}
+.qr-area img{width:${qrSize}mm;height:${qrSize}mm;display:block;image-rendering:pixelated}
+@media print{html,body{width:${w}mm;height:${h}mm}.label{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head><body><div class="label"><div class="info">${rows.join('') || '<div class="row"><span>Etiqueta vacía</span></div>'}</div>${Number(c.show_qr) === 1 ? `<div class="qr-area"><img src="${qrSrc}" alt="QR pedido ${this.escapeLabelHtml(orderId)}"></div>` : ''}</div><script>
+(function(){
+  function fitAutoText(){
+    document.querySelectorAll('.autofit-text').forEach(function(el){
+      el.style.fontSize = '';
+      var size = parseFloat(getComputedStyle(el).fontSize) || 10;
+      var min = 6;
+      var guard = 0;
+      while (el.scrollWidth > el.clientWidth && size > min && guard < 24) {
+        size -= 0.5;
+        el.style.fontSize = size + 'px';
+        guard++;
+      }
+    });
+  }
+  window.addEventListener('load', fitAutoText);
+  window.addEventListener('beforeprint', fitAutoText);
+  setTimeout(fitAutoText, 80);
+})();
+<\/script>${autoPrintScript}</body></html>`;
+    },
+    buildTestLabelHtml() { return this.buildLabelHtml({ print: true }); },
+    printTestLabel() {
+      const w = window.open('', '_blank');
+      if (!w) return alert('El navegador ha bloqueado la ventana de impresión.');
+      w.document.write(this.buildTestLabelHtml());
+      w.document.close();
+    },
+    async loadLabelTemplates() {
+      try {
+        const apiKey = this.perfil.api_key || localStorage.getItem('el_apikey');
+        const r = await api.get(BASE + '/api/v1/label-templates', { headers: { 'x-api-key': apiKey } });
+        this.labelTemplates = r.data?.items || [];
+        const def = this.labelTemplates.find(t => Number(t.is_default) === 1);
+        if (def && !this.selectedTemplateId) { this.selectedTemplateId = def.id_template; this.templateName = def.nombre; }
+      } catch(e) { console.error('Templates load error', e); }
+    },
+    async loadSelectedTemplate() {
+      if (!this.selectedTemplateId) return;
+      try {
+        const apiKey = this.perfil.api_key || localStorage.getItem('el_apikey');
+        const r = await api.get(BASE + '/api/v1/label-templates/' + this.selectedTemplateId, { headers: { 'x-api-key': apiKey } });
+        if (r.data?.config) { Object.assign(this.configForm, r.data.config); this.syncSelectedLabelSize(); }
+        this.templateName = r.data?.nombre || this.templateName;
+      } catch(e) { this.configMsg = 'Error al cargar plantilla'; }
+    },
+    async saveAsTemplate() {
+      this.saving = true; this.configMsg = '';
+      try {
+        const apiKey = this.perfil.api_key || localStorage.getItem('el_apikey');
+        const r = await api.post(BASE + '/api/v1/label-templates', { nombre: this.templateName || 'Plantilla', config: this.configForm }, { headers: { 'x-api-key': apiKey } });
+        this.selectedTemplateId = r.data?.id_template || '';
+        await this.loadLabelTemplates();
+        this.configMsg = 'Plantilla guardada como nueva ✅';
+        setTimeout(() => this.configMsg = '', 3000);
+      } catch(e) { this.configMsg = 'Error al guardar plantilla'; }
+      finally { this.saving = false; }
+    },
+    async updateSelectedTemplate() {
+      if (!this.selectedTemplateId) return;
+      this.saving = true; this.configMsg = '';
+      try {
+        const apiKey = this.perfil.api_key || localStorage.getItem('el_apikey');
+        await api.put(BASE + '/api/v1/label-templates/' + this.selectedTemplateId, { nombre: this.templateName || 'Plantilla', config: this.configForm }, { headers: { 'x-api-key': apiKey } });
+        await this.loadLabelTemplates();
+        this.configMsg = 'Plantilla seleccionada actualizada ✅';
+        setTimeout(() => this.configMsg = '', 3000);
+      } catch(e) { this.configMsg = 'Error al actualizar plantilla'; }
+      finally { this.saving = false; }
+    },
+    async setSelectedDefaultTemplate() {
+      if (!this.selectedTemplateId) return;
+      this.saving = true; this.configMsg = '';
+      try {
+        const apiKey = this.perfil.api_key || localStorage.getItem('el_apikey');
+        const r = await api.post(BASE + '/api/v1/label-templates/' + this.selectedTemplateId + '/default', {}, { headers: { 'x-api-key': apiKey } });
+        if (r.data?.config) { Object.assign(this.configForm, r.data.config); this.syncSelectedLabelSize(); }
+        await this.loadLabelTemplates();
+        this.configMsg = 'Plantilla marcada como predeterminada ✅';
+        setTimeout(() => this.configMsg = '', 3000);
+      } catch(e) { this.configMsg = 'Error al marcar por defecto'; }
+      finally { this.saving = false; }
+    },
+    enforceUserMaxRange() {
+      if (!this.userFilterTo) this.userFilterTo = new Date().toISOString().slice(0,10);
+      const to = new Date(this.userFilterTo + 'T00:00:00');
+      const min = new Date(to); min.setMonth(min.getMonth() - 3);
+      if (!this.userFilterFrom || new Date(this.userFilterFrom + 'T00:00:00') < min) this.userFilterFrom = min.toISOString().slice(0,10);
+    },
+    setDefaultDateFilters() {
+      const today = new Date(); const to = today.toISOString().slice(0,10);
+      const userFrom = new Date(today); userFrom.setMonth(userFrom.getMonth() - 3);
+      const adminFrom = new Date(today); adminFrom.setMonth(adminFrom.getMonth() - 4);
+      if (!this.userFilterTo) this.userFilterTo = to; if (!this.userFilterFrom) this.userFilterFrom = userFrom.toISOString().slice(0,10);
+      if (!this.adminFilterTo) this.adminFilterTo = to; if (!this.adminFilterFrom) this.adminFilterFrom = adminFrom.toISOString().slice(0,10);
+    },
+    csvEscape(v) { return '"' + String(v ?? '').replace(/"/g, '""') + '"'; },
+    exportCsv(scope) {
+      let rows, fields, filename;
+      if (scope === 'user') { rows = this.displayedOrdenes; fields = this.userExportFields; filename = 'etiquetalive-pedidos-usuario.csv'; }
+      else if (scope === 'adminUsers') { rows = this.displayedAdminUsuarios; fields = this.adminUserExportFields; filename = 'etiquetalive-admin-clientes.csv'; }
+      else { rows = this.displayedAdminPedidos; fields = this.adminOrderExportFields; filename = 'etiquetalive-admin-pedidos.csv'; }
+      const active = fields.filter(f => f.enabled);
+      const val = (row, key) => {
+        if (key === 'precio') return this.formatPrice(row.precio, row.moneda);
+        if (key === 'fecha_pedido') return this.formatDate(row.fecha_pedido || row.fecha_detectado);
+        if (key === 'importe') return this.formatCents(row.importe_cents || (row.impresiones_cobrables || 0) * 10);
+        return row[key] ?? '';
+      };
+      const csv = [active.map(f => this.csvEscape(f.label)).join(',')].concat(rows.map(r => active.map(f => this.csvEscape(val(r, f.key))).join(','))).join('\n');
+      const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    },
+    async doLogin() {
+      this.loginError = ''; this.loading = true;
+      try {
+        const r = await api.post(BASE + '/api/auth/login', { email: this.loginEmail, password: this.loginPass });
+        token = r.data.token; localStorage.setItem('el_token', token);
+        api.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+        this.view = 'dash'; this.startOrdersAutoRefresh(); this.loadData();
+      } catch (e) { this.loginError = e.response?.data?.error || 'Error al iniciar sesión'; }
+      finally { this.loading = false; }
+    },
+    async doForgotPassword() {
+      this.forgotError = ''; this.forgotMsg = ''; this.loading = true;
+      try {
+        const r = await api.post(BASE + '/api/auth/forgot-password', { email: this.forgotEmail });
+        this.forgotMsg = r.data?.message || 'Si el email existe, recibirás instrucciones.';
+      } catch (e) { this.forgotError = e.response?.data?.error || 'No se pudo enviar la recuperación'; }
+      finally { this.loading = false; }
+    },
+    async doResetPassword() {
+      this.resetError = ''; this.resetMsg = '';
+      if (this.resetPass !== this.resetPass2) { this.resetError = 'Las contraseñas no coinciden'; return; }
+      if (!this.resetPass || this.resetPass.length < 8) { this.resetError = 'La contraseña debe tener mínimo 8 caracteres'; return; }
+      this.loading = true;
+      try {
+        await api.post(BASE + '/api/auth/reset-password', { token: this.resetToken, password: this.resetPass });
+        this.resetMsg = 'Contraseña actualizada. Ya puedes iniciar sesión.';
+        setTimeout(() => { this.view = 'login'; }, 1200);
+      } catch (e) { this.resetError = e.response?.data?.error || 'No se pudo actualizar la contraseña'; }
+      finally { this.loading = false; }
+    },
+    async doRegister() {
+      this.regError = ''; this.regSuccess = ''; this.loading = true;
+      try {
+        const r = await api.post(BASE + '/api/auth/register', { email: this.regEmail, password: this.regPass, nombre: this.regNombre });
+        token = r.data.token; localStorage.setItem('el_token', token);
+        api.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+        this.regSuccess = 'Cuenta creada. Tu API key: ' + r.data.api_key;
+        setTimeout(() => { this.view = 'dash'; this.loadData(); }, 1500);
+      } catch (e) { this.regError = e.response?.data?.error || 'Error al crear cuenta'; }
+      finally { this.loading = false; }
+    },
+    logout() {
+      localStorage.removeItem('el_token');
+      token = null; delete api.defaults.headers.common['Authorization'];
+      this.stopOrdersAutoRefresh();
+      this.view = 'landing';
+    },
+    calcStatsFromOrders() {
+      const ords = this.ordenes || [];
+      this.stats = {
+        total: ords.length,
+        impresos: ords.reduce((sum, o) => sum + Number(o.impresiones_cobrables || 0), 0),
+        pendientes: ords.filter(o => Number(o.impresiones_cobrables || 0) === 0).length,
+        reimpresos: ords.reduce((sum, o) => sum + Number(o.reimpresiones || 0), 0),
+      };
+    },
+    async loadOrders(silent = false) {
+      if (!token || this.loadingOrders) return;
+      if (!silent) this.loadingOrders = true;
+      try {
+        const r = await api.get(BASE + '/api/v1/orders?limit=1000&_=' + Date.now(), { headers: { 'x-api-key': localStorage.getItem('el_apikey') || '' } });
+        if (r.data?.items) {
+          const sig = r.data.items.map(o => `${o.id_pedido || o.tk}:${o.estado_impresion}:${o.reimpresiones}:${o.impresiones_cobrables}`).join('|');
+          if (sig !== this.lastOrdersSignature) {
+            this.lastOrdersSignature = sig;
+            this.ordenes = r.data.items;
+            this.calcStatsFromOrders();
+          }
+        }
+      } catch (e) { if (!silent) console.error('Orders load error', e); }
+      finally { if (!silent) this.loadingOrders = false; }
+    },
+    startOrdersAutoRefresh() {
+      this.stopOrdersAutoRefresh();
+      this.ordersAutoRefreshTimer = setInterval(() => {
+        if (token && this.view === 'dash' && document.visibilityState === 'visible') this.loadOrders(true);
+      }, 10000);
+    },
+    stopOrdersAutoRefresh() {
+      if (this.ordersAutoRefreshTimer) clearInterval(this.ordersAutoRefreshTimer);
+      this.ordersAutoRefreshTimer = null;
+    },
+    async loadData() {
+      if (!token) return;
+      try {
+        await this.loadOrders(false);
+        // Load profile
+        const p = await api.get(BASE + '/api/v1/profile', { headers: { 'x-api-key': localStorage.getItem('el_apikey') || '' } });
+      // Load admin data
+      try {
+        const adminKey = 'el_admin_satecnic_2026';
+        const statsR = await fetch(BASE + '/api/admin/stats', { headers: { 'x-admin-key': adminKey } });
+        if (statsR.ok) {
+          const statsD = await statsR.json();
+          this.adminStats = statsD.resumen || {};
+          this.adminPedidos = statsD.pedidos || [];
+        }
+        const usersR = await fetch(BASE + '/api/admin/usuarios', { headers: { 'x-admin-key': adminKey } });
+        if (usersR.ok) {
+          const usersD = await usersR.json();
+          this.adminUsuarios = usersD.usuarios || [];
+        }
+      } catch(e) { console.log('Admin load error', e); }
+        if (p.data) this.perfil = { ...this.perfil, ...p.data };
+        // Load config
+        const c = await api.get(BASE + '/api/v1/config', { headers: { 'x-api-key': localStorage.getItem('el_apikey') || '' } });
+        if (c.data) { Object.assign(this.configForm, c.data); this.syncSelectedLabelSize(); }
+        await this.loadLabelTemplates();
+      } catch (e) { console.error('Load error', e); }
+      finally { this.loadingOrders = false; }
+    },
+    async saveConfig(successText = 'Plantilla guardada ✅') {
+      this.saving = true; this.configMsg = '';
+      try {
+        const apiKey = this.perfil.api_key || localStorage.getItem('el_apikey');
+        await api.put(BASE + '/api/v1/config', this.configForm, { headers: { 'x-api-key': apiKey } });
+        this.configMsg = successText;
+        setTimeout(() => this.configMsg = '', 3000);
+      } catch (e) { this.configMsg = 'Error al guardar'; }
+      finally { this.saving = false; }
+    },
+    async reprint(tk) {
+      const apiKey = this.perfil.api_key || localStorage.getItem('el_apikey');
+      try {
+        const r = await api.post(BASE + '/api/v1/orders/' + tk + '/reprint', {}, { headers: { 'x-api-key': apiKey } });
+        if (r.data.label_html) {
+          const w = window.open('', '_blank');
+          w.document.write(r.data.label_html);
+          w.document.close();
+          try { await api.post(BASE + '/api/v1/orders/' + tk + '/mark-print', {}, { headers: { 'Authorization': 'Bearer ' + token } }); } catch(e) {}
+          setTimeout(() => { try { w.focus(); w.print(); } catch(e) {} }, 300);
+          setTimeout(() => this.loadOrders(false), 1200);
+        }
+      } catch (e) { alert('Error al reimprimir'); }
+    },
+    copyKey() {
+      navigator.clipboard.writeText(this.perfil.api_key || '');
+    },
+    formatPrice(p, m) { return p ? Number(p).toFixed(2) + ' ' + (m || 'EUR') : '—'; },
+    formatCredits(c) { return c ? (c/100).toFixed(2) + '€' : '0,00€'; },
+    formatCents(c) { return ((Number(c || 0) / 100).toFixed(2)).replace('.', ',') + '€'; },
+    formatDate(d) {
+      if (!d) return '—';
+      const dt = new Date(d);
+      if (Number.isNaN(dt.getTime())) return String(d);
+      return dt.toLocaleString('es-ES', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    },
+  },
+  mounted() {
+    this.setDefaultDateFilters();
+    const params = new URLSearchParams(window.location.search);
+    const resetToken = params.get('reset_token');
+    if (resetToken) {
+      this.resetToken = resetToken;
+      this.view = 'reset';
+      return;
+    }
+    if (token) {
+      api.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+      this.startOrdersAutoRefresh();
+      this.loadData();
+    }
+  }
+}).mount('#app');
+</script>
+</body>
+</html>

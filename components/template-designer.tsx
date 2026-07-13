@@ -1,0 +1,248 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { inputClass, buttonClass, ErrorText } from "@/components/auth-shell";
+import { DEFAULT_TEMPLATE_VALUES, type LabelTemplate } from "@/lib/labels/types";
+
+type FieldsOnly = Omit<LabelTemplate, "id" | "tenant_id" | "nombre" | "is_default">;
+
+const FIELD_LABELS: Record<string, string> = {
+  auction: "Subasta",
+  cliente: "Cliente",
+  tiktok_name: "Nombre TikTok",
+  order_id: "Nº Pedido",
+  price: "Precio",
+  datetime: "Fecha y hora",
+};
+
+function checkboxRow(
+  fields: FieldsOnly,
+  setFields: (f: FieldsOnly) => void,
+  key: "show_auction" | "show_cliente" | "show_tiktok_name" | "show_order_id" | "show_price" | "show_datetime",
+  orderKey: "order_auction" | "order_cliente" | "order_tiktok_name" | "order_order_id" | "order_price" | "order_datetime",
+  fieldKey: string
+) {
+  return (
+    <div key={key} className="flex items-center justify-between gap-3 py-1.5">
+      <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+        <input
+          type="checkbox"
+          checked={fields[key]}
+          onChange={(e) => setFields({ ...fields, [key]: e.target.checked })}
+        />
+        {FIELD_LABELS[fieldKey]}
+      </label>
+      <input
+        type="number"
+        min={1}
+        max={6}
+        value={fields[orderKey]}
+        onChange={(e) => setFields({ ...fields, [orderKey]: Number(e.target.value) })}
+        className="w-16 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+      />
+    </div>
+  );
+}
+
+function numberField(
+  label: string,
+  fields: FieldsOnly,
+  setFields: (f: FieldsOnly) => void,
+  key: keyof FieldsOnly,
+  step = 0.1
+) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs text-zinc-500 dark:text-zinc-400">{label}</label>
+      <input
+        type="number"
+        step={step}
+        value={fields[key] as number}
+        onChange={(e) => setFields({ ...fields, [key]: Number(e.target.value) })}
+        className={inputClass}
+      />
+    </div>
+  );
+}
+
+export function TemplateDesigner({ initialTemplates }: { initialTemplates: LabelTemplate[] }) {
+  const [templates, setTemplates] = useState(initialTemplates);
+  const defaultTpl = initialTemplates.find((t) => t.is_default) ?? initialTemplates[0];
+  const [selectedId, setSelectedId] = useState(defaultTpl?.id ?? "");
+  const [nombre, setNombre] = useState(defaultTpl?.nombre ?? "Plantilla");
+  const [fields, setFields] = useState<FieldsOnly>(defaultTpl ?? DEFAULT_TEMPLATE_VALUES);
+  const [previewHtml, setPreviewHtml] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const refreshPreview = useCallback((f: FieldsOnly) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      const res = await fetch("/api/templates/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(f),
+      });
+      if (res.ok) setPreviewHtml(await res.text());
+    }, 300);
+  }, []);
+
+  useEffect(() => {
+    refreshPreview(fields);
+  }, [fields, refreshPreview]);
+
+  function updateFields(f: FieldsOnly) {
+    setFields(f);
+  }
+
+  function loadTemplate(id: string) {
+    const t = templates.find((tpl) => tpl.id === id);
+    if (!t) return;
+    setSelectedId(id);
+    setNombre(t.nombre);
+    setFields(t);
+  }
+
+  async function handleSave() {
+    setError(null);
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/templates/${selectedId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre, ...fields }),
+      });
+      const data = await res.json();
+      if (!res.ok) return setError(data.error ?? "No se pudo guardar.");
+      setTemplates((prev) => prev.map((t) => (t.id === selectedId ? data.template : t)));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSaveAsNew() {
+    setError(null);
+    setSaving(true);
+    try {
+      const res = await fetch("/api/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre, ...fields }),
+      });
+      const data = await res.json();
+      if (!res.ok) return setError(data.error ?? "No se pudo guardar.");
+      setTemplates((prev) => [data.template, ...prev]);
+      setSelectedId(data.template.id);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSetDefault() {
+    setError(null);
+    const res = await fetch(`/api/templates/${selectedId}/default`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) return setError(data.error ?? "No se pudo marcar como predeterminada.");
+    setTemplates((prev) => prev.map((t) => ({ ...t, is_default: t.id === selectedId })));
+  }
+
+  return (
+    <div className="flex gap-8">
+      <div className="min-w-0 flex-1 space-y-6">
+        <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <label className="mb-1 block text-xs text-zinc-500 dark:text-zinc-400">Plantillas guardadas</label>
+          <select
+            value={selectedId}
+            onChange={(e) => loadTemplate(e.target.value)}
+            className="w-full rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+          >
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.nombre}
+                {t.is_default ? " · predeterminada" : ""}
+              </option>
+            ))}
+          </select>
+          <label className="mb-1 mt-3 block text-xs text-zinc-500 dark:text-zinc-400">Nombre</label>
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} className={inputClass} />
+        </div>
+
+        <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+            Campos a imprimir y orden
+          </h3>
+          {checkboxRow(fields, updateFields, "show_auction", "order_auction", "auction")}
+          {checkboxRow(fields, updateFields, "show_cliente", "order_cliente", "cliente")}
+          {checkboxRow(fields, updateFields, "show_tiktok_name", "order_tiktok_name", "tiktok_name")}
+          {checkboxRow(fields, updateFields, "show_order_id", "order_order_id", "order_id")}
+          {checkboxRow(fields, updateFields, "show_price", "order_price", "price")}
+          {checkboxRow(fields, updateFields, "show_datetime", "order_datetime", "datetime")}
+          <label className="mt-2 flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+            <input
+              type="checkbox"
+              checked={fields.show_qr}
+              onChange={(e) => updateFields({ ...fields, show_qr: e.target.checked })}
+            />
+            Código QR
+          </label>
+        </div>
+
+        <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <h3 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Dimensiones y tamaños</h3>
+          <div className="grid grid-cols-2 gap-3">
+            {numberField("Ancho etiqueta (mm)", fields, updateFields, "label_width_mm", 1)}
+            {numberField("Alto etiqueta (mm)", fields, updateFields, "label_height_mm", 1)}
+            {numberField("Tamaño QR (mm)", fields, updateFields, "qr_size_mm")}
+            {numberField("Tamaño Subasta (pt)", fields, updateFields, "auction_font_pt")}
+            {numberField("Tamaño Cliente (pt)", fields, updateFields, "customer_font_pt")}
+            {numberField("Tamaño TikTok (pt)", fields, updateFields, "tiktok_font_pt")}
+            {numberField("Tamaño Nº Pedido (pt)", fields, updateFields, "order_font_pt")}
+            {numberField("Tamaño Precio (pt)", fields, updateFields, "price_font_pt")}
+            {numberField("Tamaño Fecha (pt)", fields, updateFields, "date_font_pt")}
+            {numberField("Tamaño base (pt)", fields, updateFields, "label_font_pt")}
+            {numberField("Separación líneas (mm)", fields, updateFields, "line_spacing_mm")}
+            {numberField("Separación título→datos (mm)", fields, updateFields, "title_data_gap_mm")}
+            {numberField("Separación letras (pt)", fields, updateFields, "letter_spacing_pt")}
+            {numberField("Ancho columna izq. (mm)", fields, updateFields, "label_col_width_mm")}
+            {numberField("Separación columnas (mm)", fields, updateFields, "column_gap_mm")}
+            {numberField("Márgenes internos (mm)", fields, updateFields, "padding_mm")}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <button onClick={handleSave} disabled={saving} className={buttonClass}>
+            {saving ? "Guardando..." : "Guardar cambios"}
+          </button>
+          <button
+            onClick={handleSaveAsNew}
+            disabled={saving}
+            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            Guardar como nueva
+          </button>
+          {templates.find((t) => t.id === selectedId)?.is_default === false && (
+            <button
+              onClick={handleSetDefault}
+              className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              Marcar como predeterminada
+            </button>
+          )}
+        </div>
+        <ErrorText message={error} />
+      </div>
+
+      <div className="sticky top-4 w-80 flex-none self-start">
+        <h3 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Vista previa</h3>
+        <div className="rounded-lg border border-zinc-200 bg-zinc-100 p-6 dark:border-zinc-800 dark:bg-zinc-950">
+          <iframe
+            srcDoc={previewHtml}
+            title="Vista previa de la etiqueta"
+            className="mx-auto h-40 w-full max-w-xs bg-white"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}

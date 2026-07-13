@@ -1,0 +1,67 @@
+export type LabelTemplate = {
+  id: string;
+  tenant_id: string;
+  nombre: string;
+  is_default: boolean;
+  label_width_mm: number;
+  label_height_mm: number;
+  show_auction: boolean;
+  show_cliente: boolean;
+  show_tiktok_name: boolean;
+  show_order_id: boolean;
+  show_price: boolean;
+  show_datetime: boolean;
+  show_qr: boolean;
+  order_auction: number;
+  order_cliente: number;
+  order_tiktok_name: number;
+  order_order_id: number;
+  order_price: number;
+  order_datetime: number;
+  auction_font_pt: number;
+  customer_font_pt: number;
+  tiktok_font_pt: number;
+  order_font_pt: number;
+  price_font_pt: number;
+  date_font_pt: number;
+  label_font_pt: number;
+  qr_size_mm: number;
+  line_spacing_mm: number;
+  title_data_gap_mm: number;
+  letter_spacing_pt: number;
+  label_col_width_mm: number;
+  column_gap_mm: number;
+  padding_mm: number;
+};
+
+export const DEFAULT_TEMPLATE_VALUES: Omit<LabelTemplate, "id" | "tenant_id" | "nombre" | "is_default"> = {
+  label_width_mm: 60,
+  label_height_mm: 29,
+  show_auction: true,
+  show_cliente: true,
+  show_tiktok_name: true,
+  show_order_id: true,
+  show_price: true,
+  show_datetime: true,
+  show_qr: true,
+  order_auction: 1,
+  order_cliente: 2,
+  order_tiktok_name: 3,
+  order_order_id: 4,
+  order_price: 5,
+  order_datetime: 6,
+  auction_font_pt: 9,
+  customer_font_pt: 8.4,
+  tiktok_font_pt: 8.4,
+  order_font_pt: 7,
+  price_font_pt: 10.5,
+  date_font_pt: 5.4,
+  label_font_pt: 10,
+  qr_size_mm: 13,
+  line_spacing_mm: 1.4,
+  title_data_gap_mm: 0,
+  letter_spacing_pt: 0,
+  label_col_width_mm: 24,
+  column_gap_mm: 2,
+  padding_mm: 1,
+};
