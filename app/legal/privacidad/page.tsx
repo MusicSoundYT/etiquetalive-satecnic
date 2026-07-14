@@ -14,7 +14,7 @@ export default function PrivacidadPage() {
 
       <h2>Responsable del tratamiento</h2>
       <ul>
-        <li><strong>Razón social:</strong> UCKY BARNAVIT, S.L. (N.I.F. B-05380084)</li>
+        <li><strong>Razón social:</strong> LUCKY BARNAVIT, S.L. (N.I.F. B-05380084)</li>
         <li>
           <strong>Domicilio:</strong> Carrer Liszt, 11, 08923 Santa Coloma de Gramenet (Barcelona)
         </li>

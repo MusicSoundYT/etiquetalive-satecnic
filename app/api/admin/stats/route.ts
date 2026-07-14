@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth/session";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { fetchAllRows } from "@/lib/supabase-paginate";
 
 export async function GET() {
   const user = await getSessionUser();
@@ -12,16 +13,21 @@ export async function GET() {
     supabaseAdmin.from("orders").select("*", { count: "exact", head: true }),
   ]);
 
-  const { data: orderRows } = await supabaseAdmin
-    .from("orders")
-    .select("impresiones_cobrables, reimpresiones");
-  const totalImpresiones = (orderRows ?? []).reduce(
+  // PostgREST tope a 1000 filas por respuesta: hay que paginar para sumar
+  // sobre tablas que pueden superarlo (orders_processed ya tiene miles).
+  const orderRows = await fetchAllRows<{ impresiones_cobrables: number; reimpresiones: number }>(
+    (from, to) =>
+      supabaseAdmin.from("orders").select("impresiones_cobrables, reimpresiones").range(from, to)
+  );
+  const totalImpresiones = orderRows.reduce(
     (sum, o) => sum + (o.impresiones_cobrables > 0 ? 1 : 0) + o.reimpresiones,
     0
   );
 
-  const { data: processedRows } = await supabaseAdmin.from("orders_processed").select("price_cents");
-  const totalFacturableCents = (processedRows ?? []).reduce((sum, p) => sum + p.price_cents, 0);
+  const processedRows = await fetchAllRows<{ price_cents: number }>((from, to) =>
+    supabaseAdmin.from("orders_processed").select("price_cents").range(from, to)
+  );
+  const totalFacturableCents = processedRows.reduce((sum, p) => sum + p.price_cents, 0);
 
   return NextResponse.json({
     totalTenants: totalTenants ?? 0,

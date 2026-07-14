@@ -13,7 +13,7 @@ export default function AvisoLegalPage() {
 
       <h2>Titular del sitio web</h2>
       <ul>
-        <li><strong>Razón social:</strong> UCKY BARNAVIT, S.L.</li>
+        <li><strong>Razón social:</strong> LUCKY BARNAVIT, S.L.</li>
         <li><strong>N.I.F.:</strong> B-05380084</li>
         <li>
           <strong>Domicilio social:</strong> Carrer Liszt, 11, 08923 Santa Coloma de Gramenet
@@ -46,14 +46,14 @@ export default function AvisoLegalPage() {
       <p>
         Todos los contenidos del sitio web, incluyendo a título enunciativo y no limitativo su
         programación, edición, compilación, diseño, logotipos, texto y/o gráficos, son propiedad de
-        UCKY BARNAVIT, S.L. o, en su caso, dispone de licencia o autorización expresa de los
+        LUCKY BARNAVIT, S.L. o, en su caso, dispone de licencia o autorización expresa de los
         autores. Queda prohibida su reproducción, distribución o comunicación pública total o
         parcial sin autorización expresa.
       </p>
 
       <h2>Exclusión de responsabilidad</h2>
       <p>
-        UCKY BARNAVIT, S.L. no se hace responsable de la veracidad de los datos de pedidos
+        LUCKY BARNAVIT, S.L. no se hace responsable de la veracidad de los datos de pedidos
         detectados automáticamente por la extensión desde plataformas de terceros (TikTok), ni de
         interrupciones del Servicio derivadas de causas ajenas a su control, incluyendo cambios en
         dichas plataformas de terceros.

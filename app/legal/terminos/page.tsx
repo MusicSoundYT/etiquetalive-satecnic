@@ -7,7 +7,7 @@ export default function TerminosPage() {
     <LegalPage title="Términos y condiciones">
       <h2>1. Objeto</h2>
       <p>
-        Estas condiciones regulan el uso de Etiqueta Live, un servicio (SaaS) prestado por UCKY
+        Estas condiciones regulan el uso de Etiqueta Live, un servicio (SaaS) prestado por LUCKY
         BARNAVIT, S.L. (N.I.F. B-05380084, domicilio en Carrer Liszt, 11, 08923 Santa Coloma de
         Gramenet, Barcelona) que permite detectar pedidos generados en directos de TikTok e
         imprimir etiquetas de envío, mediante una extensión de navegador y un panel web.
@@ -55,7 +55,7 @@ export default function TerminosPage() {
 
       <h2>6. Propiedad intelectual</h2>
       <p>
-        El software, diseño y marca de Etiqueta Live son titularidad de UCKY BARNAVIT, S.L. Se te
+        El software, diseño y marca de Etiqueta Live son titularidad de LUCKY BARNAVIT, S.L. Se te
         concede una licencia de uso no exclusiva e intransferible, limitada a la duración de tu
         cuenta.
       </p>
@@ -69,7 +69,7 @@ export default function TerminosPage() {
 
       <h2>8. Responsabilidad</h2>
       <p>
-        UCKY BARNAVIT, S.L. no será responsable de daños indirectos o lucro cesante derivados del
+        LUCKY BARNAVIT, S.L. no será responsable de daños indirectos o lucro cesante derivados del
         uso o imposibilidad de uso del Servicio, ni de errores en los datos detectados
         automáticamente desde plataformas de terceros.
       </p>
