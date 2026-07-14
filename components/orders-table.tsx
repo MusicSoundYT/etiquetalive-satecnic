@@ -7,6 +7,7 @@ import Link from "next/link";
 type Order = {
   id: string;
   tk: string;
+  external_order_id: string | null;
   cliente: string | null;
   precio_cents: number;
   moneda: string;
@@ -138,6 +139,7 @@ export function OrdersTable({
           <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
             <tr>
               <th className="px-4 py-2">{sortableHeader("tk", "TK")}</th>
+              <th className="px-4 py-2">ID de pedido</th>
               <th className="px-4 py-2">{sortableHeader("cliente", "Cliente")}</th>
               <th className="px-4 py-2">{sortableHeader("precio", "Precio")}</th>
               <th className="px-4 py-2">{sortableHeader("fecha", "Fecha")}</th>
@@ -149,7 +151,7 @@ export function OrdersTable({
           <tbody className="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-900">
             {orders.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-zinc-500 dark:text-zinc-400">
+                <td colSpan={8} className="px-4 py-6 text-center text-zinc-500 dark:text-zinc-400">
                   No hay pedidos todavía.
                 </td>
               </tr>
@@ -157,6 +159,9 @@ export function OrdersTable({
               orders.map((o) => (
                 <tr key={o.id}>
                   <td className="px-4 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300">{o.tk}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300">
+                    {o.external_order_id ?? "—"}
+                  </td>
                   <td className="px-4 py-2 text-zinc-700 dark:text-zinc-300">{o.cliente ?? "—"}</td>
                   <td className="px-4 py-2 text-zinc-700 dark:text-zinc-300">
                     {(o.precio_cents / 100).toFixed(2)}
