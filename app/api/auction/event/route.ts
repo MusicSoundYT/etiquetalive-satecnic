@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { authenticateExtensionRequest } from "@/lib/auth/extension-auth";
+import { corsPreflight, withCors } from "@/lib/cors";
+
+export function OPTIONS(req: NextRequest) {
+  return corsPreflight(req);
+}
 
 const eventSchema = z.object({
   winner: z.string().trim().max(200).optional().default(""),
@@ -28,10 +33,10 @@ function parsePriceValue(priceText: string): number | null {
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   const tenantId = await authenticateExtensionRequest(req, rawBody);
-  if (!tenantId) return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  if (!tenantId) return withCors(req, NextResponse.json({ error: "No autorizado." }, { status: 401 }));
 
   const parsed = bodySchema.safeParse(JSON.parse(rawBody || "{}"));
-  if (!parsed.success) return NextResponse.json({ error: "Datos inválidos." }, { status: 400 });
+  if (!parsed.success) return withCors(req, NextResponse.json({ error: "Datos inválidos." }, { status: 400 }));
   const { event } = parsed.data;
 
   const signature = [event.winner, event.productName, event.price, event.auctionId]
@@ -62,5 +67,5 @@ export async function POST(req: NextRequest) {
     html_fragment_size: event.raw?.length ?? null,
   });
 
-  return NextResponse.json({ status: "ok" });
+  return withCors(req, NextResponse.json({ status: "ok" }));
 }

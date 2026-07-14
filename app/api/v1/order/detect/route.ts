@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { authenticateExtensionRequest } from "@/lib/auth/extension-auth";
+import { corsPreflight, withCors } from "@/lib/cors";
+
+export function OPTIONS(req: NextRequest) {
+  return corsPreflight(req);
+}
 
 const bodySchema = z.object({
   order_id: z.string().trim().min(1),
@@ -36,10 +41,10 @@ function parseExtensionDate(value?: string): string | null {
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   const tenantId = await authenticateExtensionRequest(req, rawBody);
-  if (!tenantId) return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  if (!tenantId) return withCors(req, NextResponse.json({ error: "No autorizado." }, { status: 401 }));
 
   const parsed = bodySchema.safeParse(JSON.parse(rawBody || "{}"));
-  if (!parsed.success) return NextResponse.json({ error: "Datos inválidos." }, { status: 400 });
+  if (!parsed.success) return withCors(req, NextResponse.json({ error: "Datos inválidos." }, { status: 400 }));
   const body = parsed.data;
 
   // Idempotencia: si ya existe un pedido con este external_order_id para el
@@ -53,7 +58,7 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
 
   if (existing) {
-    return NextResponse.json({ tk: existing.tk, order_id: existing.id });
+    return withCors(req, NextResponse.json({ tk: existing.tk, order_id: existing.id }));
   }
 
   const { data: tk } = await supabaseAdmin.rpc("next_tk", { p_tenant_id: tenantId });
@@ -74,8 +79,8 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error || !order) {
-    return NextResponse.json({ error: "No se pudo registrar el pedido." }, { status: 500 });
+    return withCors(req, NextResponse.json({ error: "No se pudo registrar el pedido." }, { status: 500 }));
   }
 
-  return NextResponse.json({ tk: order.tk, order_id: order.id });
+  return withCors(req, NextResponse.json({ tk: order.tk, order_id: order.id }));
 }
