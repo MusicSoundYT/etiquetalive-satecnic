@@ -1,4 +1,4 @@
-const API = "https://etiquetalive.satecnic.es";
+const API = "https://etiquetalivetiktok.satecnic.es";
 
 async function sign(body, apiKey) {
   // HMAC-SHA256 real usando la propia API key como clave — sustituye el hash

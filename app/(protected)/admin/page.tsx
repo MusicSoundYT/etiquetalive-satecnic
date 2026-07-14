@@ -1,8 +1,8 @@
 import { requireAdminSession } from "@/lib/auth/require-session";
-import { AdminUsersTable } from "@/components/admin-users-table";
+import { AdminClientsSection } from "@/components/admin-clients-section";
 import { AdminPricingTiers } from "@/components/admin-pricing-tiers";
 import { AdminStatsCards } from "@/components/admin-stats-cards";
-import { AdminOrdersPanel } from "@/components/admin-orders-panel";
+import { AdminMonthlyBilling } from "@/components/admin-monthly-billing";
 
 export default async function AdminPage() {
   await requireAdminSession();
@@ -20,20 +20,20 @@ export default async function AdminPage() {
       </section>
 
       <section>
+        <h2 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+          Facturación mensual
+        </h2>
+        <AdminMonthlyBilling />
+      </section>
+
+      <section>
         <h2 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Rangos de precio</h2>
         <AdminPricingTiers />
       </section>
 
       <section>
         <h2 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Clientes</h2>
-        <AdminUsersTable />
-      </section>
-
-      <section>
-        <h2 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-          Pedidos (todos los clientes)
-        </h2>
-        <AdminOrdersPanel />
+        <AdminClientsSection />
       </section>
     </div>
   );

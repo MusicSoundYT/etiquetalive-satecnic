@@ -48,3 +48,6 @@ next-env.d.ts
 
 # supabase CLI (caché local)
 /supabase/.temp/
+
+# paquetes empaquetados de la extensión (artefactos, no fuente)
+*.zip

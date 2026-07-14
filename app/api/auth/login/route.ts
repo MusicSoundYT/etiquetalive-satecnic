@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
 
   const { data: user } = await supabaseAdmin
     .from("users")
-    .select("id, password_hash, mfa_enabled")
+    .select("id, tenant_id, password_hash, mfa_enabled")
     .eq("email", email)
     .maybeSingle();
 
@@ -41,6 +41,20 @@ export async function POST(req: NextRequest) {
   const validPassword = await verifyPassword(password, user.password_hash);
   if (!validPassword) {
     return NextResponse.json(GENERIC_ERROR, { status: 401 });
+  }
+
+  if (user.tenant_id) {
+    const { data: tenant } = await supabaseAdmin
+      .from("tenants")
+      .select("status")
+      .eq("id", user.tenant_id)
+      .maybeSingle();
+    if (tenant?.status && tenant.status !== "active") {
+      return NextResponse.json(
+        { error: "Esta cuenta está dada de baja. Contacta con soporte." },
+        { status: 403 }
+      );
+    }
   }
 
   await supabaseAdmin

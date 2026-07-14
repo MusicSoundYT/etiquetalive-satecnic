@@ -15,7 +15,7 @@
   "host_permissions": [
     "https://seller-es.tiktok.com/*",
     "https://shop.tiktok.com/*",
-    "https://etiquetalive.satecnic.es/*"
+    "https://etiquetalivetiktok.satecnic.es/*"
   ],
   "content_scripts": [
     {

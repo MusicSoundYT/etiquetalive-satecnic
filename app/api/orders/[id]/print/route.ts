@@ -28,6 +28,41 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!order) return NextResponse.json({ error: "Pedido no encontrado." }, { status: 404 });
 
+  // Si ya está cobrado (reimpresión), no hay nada que comprobar: se deja pasar
+  // al reclamo de abajo, que devolverá "already_charged_first_print" sin cobrar.
+  if (order.impresiones_cobrables === 0) {
+    const { data: owner } = await supabaseAdmin
+      .from("users")
+      .select("id")
+      .eq("tenant_id", ctx.tenantId)
+      .limit(1)
+      .single();
+    if (!owner) return NextResponse.json({ error: "Tenant sin usuario asociado." }, { status: 500 });
+
+    const balance = await getUserBalance(owner.id);
+
+    // Cuentas DEMO: imprimen sin límite, sin comprobar saldo ni bloqueo.
+    if (!balance?.is_demo) {
+      if (balance?.is_blocked) {
+        return NextResponse.json(
+          { error: balance.block_reason ?? "Cuenta bloqueada para impresión." },
+          { status: 402 }
+        );
+      }
+
+      const priceCents = await getPriceCentsForTier(balance?.current_tier ?? 1);
+      // Comprobación ANTES de reclamar el pedido: si no llega a haber saldo
+      // suficiente, se rechaza sin marcar el pedido como cobrado, para que se
+      // pueda reintentar (tras recargar) en vez de quedar "gratis" para siempre.
+      if ((balance?.balance_cents ?? 0) < priceCents) {
+        return NextResponse.json(
+          { error: "Saldo insuficiente. Recarga tu saldo para poder imprimir." },
+          { status: 402 }
+        );
+      }
+    }
+  }
+
   // Reclamo atómico: solo la petición que consigue pasar impresiones_cobrables
   // de 0 a 1 procede a cobrar. Evita doble cobro por condición de carrera si
   // llegan dos "print" concurrentes para el mismo pedido (p. ej. reinstalación
@@ -63,15 +98,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // marcado como impreso/cobrable arriba, así que la etiqueta se sirve igual.
   if (balance?.is_demo) {
     return NextResponse.json({ order: claimed, charged: false, reason: "demo_account", priceCents: 0 });
-  }
-
-  if (balance?.is_blocked) {
-    // El pedido ya quedó marcado como impreso/cobrable; se registra sin cobrar
-    // efectivamente y se informa del bloqueo (evita reintentos infinitos).
-    return NextResponse.json(
-      { error: balance.block_reason ?? "Cuenta bloqueada para impresión." },
-      { status: 402 }
-    );
   }
 
   const priceCents = await getPriceCentsForTier(balance?.current_tier ?? 1);

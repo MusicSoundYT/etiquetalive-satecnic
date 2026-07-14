@@ -1,6 +1,6 @@
 (() => {
   const VERSION = "el-1.6.14-auction";
-  const API_BASE = "https://etiquetalive.satecnic.es";
+  const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const SCAN_INTERVAL_MS = 2500;
   const MUTATION_DEBOUNCE_MS = 1000;
   const EVENT_COOLDOWN_MS = 15000;
