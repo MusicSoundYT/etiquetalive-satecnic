@@ -8,7 +8,7 @@ type AdminUser = {
   name: string | null;
   last_name: string | null;
   is_admin: boolean;
-  balance: { current_tier: number; balance_cents: number; is_blocked: boolean } | null;
+  balance: { current_tier: number; balance_cents: number; is_blocked: boolean; is_demo: boolean } | null;
 };
 
 export function AdminUsersTable() {
@@ -39,6 +39,22 @@ export function AdminUsersTable() {
     }
   }
 
+  async function toggleDemo(userId: string, isDemo: boolean) {
+    setSavingId(userId);
+    try {
+      await fetch(`/api/admin/users/${userId}/demo`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isDemo }),
+      });
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, balance: { ...u.balance!, is_demo: isDemo } } : u))
+      );
+    } finally {
+      setSavingId(null);
+    }
+  }
+
   if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">Cargando…</p>;
 
   return (
@@ -50,6 +66,7 @@ export function AdminUsersTable() {
             <th className="px-4 py-2">Email</th>
             <th className="px-4 py-2">Saldo</th>
             <th className="px-4 py-2">Rango</th>
+            <th className="px-4 py-2">Demo</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-900">
@@ -60,6 +77,11 @@ export function AdminUsersTable() {
                 {u.is_admin && (
                   <span className="ml-2 rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-white dark:bg-zinc-100 dark:text-zinc-900">
                     admin
+                  </span>
+                )}
+                {u.balance?.is_demo && (
+                  <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                    demo
                   </span>
                 )}
               </td>
@@ -78,6 +100,17 @@ export function AdminUsersTable() {
                   <option value={2}>2</option>
                   <option value={3}>3</option>
                 </select>
+              </td>
+              <td className="px-4 py-2">
+                <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+                  <input
+                    type="checkbox"
+                    checked={u.balance?.is_demo ?? false}
+                    disabled={savingId === u.id}
+                    onChange={(e) => toggleDemo(u.id, e.target.checked)}
+                  />
+                  Imprime gratis
+                </label>
               </td>
             </tr>
           ))}

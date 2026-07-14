@@ -14,6 +14,12 @@ export default async function RechargePage() {
       <div>
         <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Renovación</h1>
 
+        {balance?.is_demo && (
+          <div className="mt-3 max-w-sm rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+            Tu cuenta está en modo DEMO: imprimir etiquetas no descuenta saldo real.
+          </div>
+        )}
+
         <div className="max-w-sm">
           <div className="mt-4 rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
             <div className="text-xs text-zinc-500 dark:text-zinc-400">Saldo disponible</div>

@@ -57,7 +57,7 @@ export async function getUserBalance(userId: string) {
   const { data } = await supabaseAdmin
     .from("user_balances")
     .select(
-      "balance_cents, current_tier, is_blocked, block_reason, auto_recharge_enabled, auto_recharge_threshold_cents, auto_recharge_amount_cents, stripe_default_pm_id"
+      "balance_cents, current_tier, is_blocked, block_reason, is_demo, auto_recharge_enabled, auto_recharge_threshold_cents, auto_recharge_amount_cents, stripe_default_pm_id"
     )
     .eq("user_id", userId)
     .maybeSingle();

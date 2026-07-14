@@ -18,7 +18,7 @@ export async function GET() {
     userIds.length > 0
       ? await supabaseAdmin
           .from("user_balances")
-          .select("user_id, current_tier, balance_cents, is_blocked")
+          .select("user_id, current_tier, balance_cents, is_blocked, is_demo")
           .in("user_id", userIds)
       : { data: [] };
 

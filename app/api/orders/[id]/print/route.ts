@@ -57,6 +57,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!owner) return NextResponse.json({ error: "Tenant sin usuario asociado." }, { status: 500 });
 
   const balance = await getUserBalance(owner.id);
+
+  // Cuentas DEMO (activadas por un admin en el panel): imprimen sin límite,
+  // sin descontar saldo real y sin comprobar bloqueo. El pedido ya ha quedado
+  // marcado como impreso/cobrable arriba, así que la etiqueta se sirve igual.
+  if (balance?.is_demo) {
+    return NextResponse.json({ order: claimed, charged: false, reason: "demo_account", priceCents: 0 });
+  }
+
   if (balance?.is_blocked) {
     // El pedido ya quedó marcado como impreso/cobrable; se registra sin cobrar
     // efectivamente y se informa del bloqueo (evita reintentos infinitos).
