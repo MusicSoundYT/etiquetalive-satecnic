@@ -51,3 +51,4 @@ next-env.d.ts
 
 # paquetes empaquetados de la extensión (artefactos, no fuente)
 *.zip
+*.rar

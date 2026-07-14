@@ -558,7 +558,7 @@
     if (idxSub >= 0) {
       for (let i = idxSub + 1; i < Math.min(lines.length, idxSub + 16); i++) {
         const l = lines[i];
-        if (!l || /Iniciar chat/i.test(l) || /^España$/i.test(l) || /^Subasta(\s+LIVE)?$/i.test(l) || /^LIVE$/i.test(l)) continue;
+        if (!l || /Iniciar chat/i.test(l) || /^España$/i.test(l) || /^Subasta(\s+LIVE)?$/i.test(l) || /^LIVE$/i.test(l) || /Hace\s+\d+/i.test(l) || /^\d+\s*(min|hora|segundo)/i.test(l)) continue;
         if (/\d{1,2}\/\d{1,2}\/\d{4}/.test(l)) continue;
         if (/^\d{1,6}(?:[,.]\d{1,2})?\s*€$/.test(l)) continue;
         if (/ID\s*de\s*pedido/i.test(l) || /^\d{15,}$/.test(l)) continue;
