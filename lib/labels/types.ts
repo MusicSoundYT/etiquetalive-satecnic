@@ -35,7 +35,7 @@ export type LabelTemplate = {
 };
 
 export const DEFAULT_TEMPLATE_VALUES: Omit<LabelTemplate, "id" | "tenant_id" | "nombre" | "is_default"> = {
-  label_width_mm: 60,
+  label_width_mm: 62,
   label_height_mm: 29,
   show_auction: true,
   show_cliente: true,

@@ -223,6 +223,96 @@
     scanTimer = setTimeout(() => scanDom(reason), MUTATION_DEBOUNCE_MS);
   }
 
+  // ═══════════════════════════════════════════════════════════
+  // Crono Watcher (detecta fin de subasta)
+  //
+  // Observa el cronómetro "Finaliza dentro de XX:XX" en TikTok Live.
+  // Cuando llega a 00:00 → dispara un escaneo inmediato (con un margen
+  // de unos segundos para que TikTok genere el pedido del ganador), en
+  // vez de esperar al siguiente escaneo periódico (SCAN_INTERVAL_MS).
+  // ═══════════════════════════════════════════════════════════
+  const reconcileDelayMs = 6000;
+  const CRONO_TRIGGER_KEYWORDS = ["Finaliza dentro de", "Ends in", "结束于", "Termina en"];
+
+  class AuctionCronoWatcher {
+    constructor() {
+      this.cronoEl = null;
+      this.observer = null;
+      this.lastTrigger = 0;
+      this.findInterval = null;
+      this.attached = false;
+      this.lastTickText = "";
+    }
+
+    start() {
+      this.findCronoEl();
+      this.findInterval = setInterval(() => {
+        if (!this.cronoEl || !document.contains(this.cronoEl)) {
+          this.attached = false;
+          this.findCronoEl();
+        }
+      }, 3000);
+    }
+
+    findCronoEl() {
+      try {
+        const divs = document.querySelectorAll("div");
+        for (const div of divs) {
+          const text = div.textContent || "";
+          let matched = false;
+          for (const kw of CRONO_TRIGGER_KEYWORDS) {
+            if (text.includes(kw)) { matched = true; break; }
+          }
+          if (!matched) continue;
+
+          const spans = div.querySelectorAll("span");
+          for (const sp of spans) {
+            const txt = (sp.textContent || "").trim();
+            if (/^\d{1,2}:\d{2}$/.test(txt)) {
+              this.attachObserver(sp);
+              return;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    attachObserver(el) {
+      if (el === this.cronoEl && this.attached) return;
+      if (this.observer) {
+        try { this.observer.disconnect(); } catch (_) {}
+      }
+      this.cronoEl = el;
+      this.attached = true;
+      this.observer = new MutationObserver(() => this.checkZero());
+      this.observer.observe(el, { characterData: true, childList: true, subtree: true });
+      this.checkZero();
+    }
+
+    checkZero() {
+      if (!this.cronoEl) return;
+      const txt = (this.cronoEl.textContent || "").trim();
+      if (txt === "00:00" || txt === "0:00") this.onZero();
+    }
+
+    onZero() {
+      const now = Date.now();
+      if (now - this.lastTrigger < 8000) return; // anti-rebote
+      this.lastTrigger = now;
+      setTimeout(() => {
+        try { scanDom("crono_zero"); } catch (_) {}
+      }, reconcileDelayMs);
+    }
+
+    stop() {
+      if (this.observer) { try { this.observer.disconnect(); } catch (_) {} }
+      if (this.findInterval) { try { clearInterval(this.findInterval); } catch (_) {} }
+      this.attached = false;
+    }
+  }
+
+  const cronoWatcher = new AuctionCronoWatcher();
+
   window.addEventListener("message", (event) => {
     if (event.source !== window) return;
     if (event.data?.type === "EL_TIKTOK_AUCTION_REQUEST") {
@@ -250,6 +340,7 @@
     setInterval(() => scanDom("tick"), SCAN_INTERVAL_MS);
     const obs = new MutationObserver(() => scheduleScan("mutation"));
     obs.observe(document.documentElement || document.body, { childList: true, subtree: true, characterData: true });
+    cronoWatcher.start();
   };
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
