@@ -362,14 +362,32 @@
         precio: priceToNumber(p.price),
         moneda: "EUR",
         fecha_pedido: normalizeOrderDate(p.orderDate),
-        raw: c.raw || ""
+        raw: c.raw || "",
+        auto_print_eligible: autoPrint
       });
       countSessionDetected(p.orderId);
       if (result?.label_html && autoPrint) {
         printLabel(result.label_html, result.tk);
         countSessionPrinted(p.orderId);
+      } else if (result?.error === "insufficient_balance" && autoPrint) {
+        showInsufficientBalanceBanner();
       }
     }
+  }
+
+  let lastBalanceWarningAt = 0;
+  function showInsufficientBalanceBanner() {
+    // Aviso no bloqueante (nada de alert(), que pausaría la pestaña en pleno directo).
+    // Cooldown de 60s para no llenar la pantalla si se acumulan varios pedidos sin saldo.
+    if (Date.now() - lastBalanceWarningAt < 60000) return;
+    lastBalanceWarningAt = Date.now();
+    try {
+      const el = document.createElement("div");
+      el.textContent = "⚠️ Sin saldo disponible: recarga tu saldo en el panel para seguir imprimiendo etiquetas automáticamente.";
+      el.style.cssText = "position:fixed;top:12px;right:12px;z-index:2147483647;background:#7f1d1d;color:#fff;padding:10px 16px;border-radius:8px;font:600 13px/1.4 sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);max-width:360px;";
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 8000);
+    } catch (_) {}
   }
 
   function norm(s) {
