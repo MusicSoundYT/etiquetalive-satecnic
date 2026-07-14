@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 type Order = {
@@ -42,9 +42,35 @@ export function OrdersTable({
   pageSize: number;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [actionError, setActionError] = useState<string | null>(null);
-  const [savingNotesId, setSavingNotesId] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  function hrefWith(overrides: Record<string, string>): string {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(overrides)) params.set(key, value);
+    return `?${params.toString()}`;
+  }
+
+  const currentSort = searchParams.get("sort") ?? "fecha";
+  const currentDir = searchParams.get("dir") === "asc" ? "asc" : "desc";
+
+  function sortableHeader(column: string, label: string) {
+    const isActive = currentSort === column;
+    const nextDir = isActive && currentDir === "desc" ? "asc" : "desc";
+    return (
+      <Link href={hrefWith({ sort: column, dir: nextDir, page: "1" })} className="flex items-center gap-1 hover:underline">
+        {label}
+        {isActive && <span>{currentDir === "asc" ? "▲" : "▼"}</span>}
+      </Link>
+    );
+  }
+
+  function showToast(message: string) {
+    setToast(message);
+    setTimeout(() => setToast((current) => (current === message ? null : current)), 2000);
+  }
 
   async function handlePrintAction(order: Order) {
     setActionError(null);
@@ -57,24 +83,48 @@ export function OrdersTable({
         setActionError(data.error ?? "No se pudo procesar la acción.");
         return;
       }
+      // El cobro (si aplica) ya se ha confirmado en el servidor: ahora sí se
+      // puede cargar la etiqueta real (mode=print) e imprimirla.
+      printLabel(order.id);
       router.refresh();
     } finally {
       setPendingId(null);
     }
   }
 
+  function printLabel(orderId: string) {
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    iframe.setAttribute("aria-hidden", "true");
+
+    const cleanup = () => iframe.remove();
+    iframe.onload = () => {
+      iframe.contentWindow?.addEventListener("afterprint", cleanup);
+      iframe.contentWindow?.print();
+      // Red de seguridad por si el navegador no dispara "afterprint".
+      setTimeout(cleanup, 60_000);
+    };
+    iframe.src = `/api/orders/${orderId}/label?mode=print`;
+    document.body.appendChild(iframe);
+  }
+
   async function handleNotesBlur(order: Order, notes: string) {
     if (notes === (order.notes ?? "")) return;
-    setSavingNotesId(order.id);
     try {
-      await fetch(`/api/orders/${order.id}/notes`, {
+      const res = await fetch(`/api/orders/${order.id}/notes`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notes }),
       });
+      showToast(res.ok ? "Nota guardada" : "No se pudo guardar la nota");
       router.refresh();
-    } finally {
-      setSavingNotesId(null);
+    } catch {
+      showToast("No se pudo guardar la nota");
     }
   }
 
@@ -87,11 +137,11 @@ export function OrdersTable({
         <table className="w-full min-w-[900px] text-sm">
           <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
             <tr>
-              <th className="px-4 py-2">TK</th>
-              <th className="px-4 py-2">Cliente</th>
-              <th className="px-4 py-2">Precio</th>
-              <th className="px-4 py-2">Fecha</th>
-              <th className="px-4 py-2">Estado</th>
+              <th className="px-4 py-2">{sortableHeader("tk", "TK")}</th>
+              <th className="px-4 py-2">{sortableHeader("cliente", "Cliente")}</th>
+              <th className="px-4 py-2">{sortableHeader("precio", "Precio")}</th>
+              <th className="px-4 py-2">{sortableHeader("fecha", "Fecha")}</th>
+              <th className="px-4 py-2">{sortableHeader("estado", "Estado")}</th>
               <th className="px-4 py-2">Notas</th>
               <th className="px-4 py-2">Acciones</th>
             </tr>
@@ -129,7 +179,6 @@ export function OrdersTable({
                       onBlur={(e) => handleNotesBlur(o, e.target.value)}
                       className="w-40 rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-zinc-700 hover:border-zinc-300 focus:border-zinc-400 focus:outline-none dark:text-zinc-300 dark:hover:border-zinc-700"
                     />
-                    {savingNotesId === o.id && <span className="ml-1 text-[10px] text-zinc-400">guardando…</span>}
                   </td>
                   <td className="px-4 py-2">
                     <div className="flex gap-2">
@@ -160,7 +209,7 @@ export function OrdersTable({
         </span>
         <div className="flex items-center gap-2">
           <Link
-            href={`?page=${Math.max(1, page - 1)}`}
+            href={hrefWith({ page: String(Math.max(1, page - 1)) })}
             aria-disabled={page <= 1}
             className={`rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 ${
               page <= 1 ? "pointer-events-none opacity-40" : ""
@@ -172,7 +221,7 @@ export function OrdersTable({
             Página {page} de {totalPages}
           </span>
           <Link
-            href={`?page=${Math.min(totalPages, page + 1)}`}
+            href={hrefWith({ page: String(Math.min(totalPages, page + 1)) })}
             aria-disabled={page >= totalPages}
             className={`rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 ${
               page >= totalPages ? "pointer-events-none opacity-40" : ""
@@ -182,6 +231,11 @@ export function OrdersTable({
           </Link>
         </div>
       </div>
+      {toast && (
+        <div className="fixed bottom-4 right-4 z-50 rounded-lg bg-zinc-900 px-3 py-2 text-xs text-white shadow-lg dark:bg-zinc-100 dark:text-zinc-900">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }

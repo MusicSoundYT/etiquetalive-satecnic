@@ -21,12 +21,17 @@ function SignupForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [referralCode, setReferralCode] = useState(searchParams.get("ref") ?? "");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!acceptedTerms) {
+      setError("Debes aceptar los Términos y la Política de Privacidad.");
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/auth/register", {
@@ -38,6 +43,7 @@ function SignupForm() {
           email,
           password,
           referralCode: referralCode || undefined,
+          acceptedTerms,
         }),
       });
       const data = await res.json();
@@ -88,6 +94,25 @@ function SignupForm() {
             onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
           />
         </FormField>
+        <label className="flex items-start gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={acceptedTerms}
+            onChange={(e) => setAcceptedTerms(e.target.checked)}
+          />
+          <span>
+            He leído y acepto los{" "}
+            <Link href="/legal/terminos" target="_blank" className="underline">
+              Términos y Condiciones
+            </Link>{" "}
+            y la{" "}
+            <Link href="/legal/privacidad" target="_blank" className="underline">
+              Política de Privacidad
+            </Link>
+            .
+          </span>
+        </label>
         <button type="submit" disabled={loading} className={buttonClass}>
           {loading ? "Creando cuenta..." : "Crear cuenta"}
         </button>

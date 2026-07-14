@@ -65,11 +65,20 @@ function extractTikTokName(raw: unknown): string {
   return "";
 }
 
-/** Genera el HTML imprimible de la etiqueta (tamaño físico real vía @page) para una impresora térmica/láser. */
-export async function generateLabelHtml(order: OrderForLabel, t: LabelTemplate): Promise<string> {
+/**
+ * Genera el HTML imprimible de la etiqueta (tamaño físico real vía @page) para una impresora térmica/láser.
+ * En modo `preview` (usado por "Ver") el QR no lleva el payload real del pedido (no es escaneable/válido
+ * para envío), para que no se pueda usar como sustituto de una impresión pagada.
+ */
+export async function generateLabelHtml(
+  order: OrderForLabel,
+  t: LabelTemplate,
+  opts?: { preview?: boolean }
+): Promise<string> {
+  const preview = opts?.preview ?? false;
   const priceStr = `${(order.precio_cents / 100).toFixed(2)} ${order.moneda || "EUR"}`;
   const dateStr = formatEtiquetaDate(order.fecha_pedido);
-  const qrPayload = String(order.external_order_id || order.tk || "");
+  const qrPayload = preview ? "PREVIEW-NO-VALIDO" : String(order.external_order_id || order.tk || "");
   const tiktokName = extractTikTokName(order.raw_payload);
 
   const rows = [

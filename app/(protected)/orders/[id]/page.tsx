@@ -53,8 +53,14 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         ))}
       </dl>
 
-      <h2 className="mt-8 mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Etiqueta</h2>
-      <LabelPreview orderId={order.id} initialCharged={order.impresiones_cobrables > 0} />
+      <h2 className="mt-8 mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+        Etiqueta (vista previa)
+      </h2>
+      <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+        Esta vista es solo para comprobar el contenido; no es válida para envío. Para imprimir o
+        reimprimir, hazlo desde el listado de pedidos.
+      </p>
+      <LabelPreview orderId={order.id} />
     </div>
   );
 }

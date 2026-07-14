@@ -6,12 +6,18 @@ import { generateReferralCode } from "@/lib/referrals/code";
 import { isRateLimited } from "@/lib/auth/rate-limit";
 import { issueMfaChallenge } from "@/lib/auth/mfa-challenge";
 
+const CURRENT_TERMS_VERSION = "2026-07-14";
+const CURRENT_PRIVACY_VERSION = "2026-07-14";
+
 const bodySchema = z.object({
   email: z.string().trim().toLowerCase().email(),
   password: z.string().min(1),
   name: z.string().trim().min(1).max(200),
   lastName: z.string().trim().max(200).optional(),
   referralCode: z.string().trim().toUpperCase().max(16).optional(),
+  acceptedTerms: z.literal(true, {
+    error: "Debes aceptar los Términos y la Política de Privacidad.",
+  }),
 });
 
 function clientIp(req: NextRequest): string {
@@ -88,6 +94,15 @@ export async function POST(req: NextRequest) {
   }
 
   await supabaseAdmin.from("user_balances").insert({ user_id: user.id, current_tier: 1 });
+
+  await supabaseAdmin.from("terms_acceptances").insert({
+    tenant_id: tenant.id,
+    user_id: user.id,
+    terms_version: CURRENT_TERMS_VERSION,
+    privacy_version: CURRENT_PRIVACY_VERSION,
+    ip_address: ip !== "unknown" ? ip : null,
+    user_agent: req.headers.get("user-agent"),
+  });
 
   if (referrer) {
     await supabaseAdmin.from("referrals").insert({

@@ -1,6 +1,8 @@
 import { requireSession } from "@/lib/auth/require-session";
 import { RechargeForm } from "@/components/recharge-form";
 import { ReferralsPanel } from "@/components/referrals-panel";
+import { AutoRechargePanel } from "@/components/auto-recharge-panel";
+import { BillingHistoryPanel } from "@/components/billing-history-panel";
 import { getUserBalance } from "@/lib/wallet/ledger";
 
 export default async function RechargePage() {
@@ -24,6 +26,19 @@ export default async function RechargePage() {
         </p>
         <div className="mt-6">
           <RechargeForm />
+        </div>
+
+        <div className="mt-6">
+          <AutoRechargePanel
+            hasPaymentMethod={Boolean(balance?.stripe_default_pm_id)}
+            autoRechargeEnabled={balance?.auto_recharge_enabled ?? false}
+            thresholdCents={balance?.auto_recharge_threshold_cents ?? 200}
+            amountCents={balance?.auto_recharge_amount_cents ?? 500}
+          />
+        </div>
+
+        <div className="mt-6">
+          <BillingHistoryPanel />
         </div>
       </div>
 

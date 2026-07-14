@@ -23,9 +23,9 @@ export function RechargeForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amountCents }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "No se pudo iniciar el pago.");
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.url) {
+        setError(data?.error ?? "No se pudo iniciar el pago.");
         return;
       }
       window.location.href = data.url;

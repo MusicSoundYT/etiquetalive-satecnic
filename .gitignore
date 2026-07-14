@@ -45,3 +45,6 @@ next-env.d.ts
 /supabase_dump.sql
 *.bak
 *.bak-*
+
+# supabase CLI (caché local)
+/supabase/.temp/

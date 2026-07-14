@@ -30,6 +30,78 @@ async function handleCheckoutCompleted(event: Stripe.Event) {
   return balanceAfterCents;
 }
 
+/**
+ * Única vía por la que se acredita el saldo de una autorecarga: el
+ * PaymentIntent se crea y confirma en lib/wallet/auto-recharge.ts, pero el
+ * saldo solo se toca aquí — evita acreditar dos veces si esa llamada síncrona
+ * y este webhook llegaran a solaparse.
+ */
+async function handlePaymentIntentSucceeded(event: Stripe.Event) {
+  const intent = event.data.object as Stripe.PaymentIntent;
+  if (intent.metadata?.kind !== "auto_recharge") return;
+
+  const userId = intent.metadata.user_id;
+  if (!userId) return;
+
+  await adjustBalance(userId, intent.amount, "recharge", {
+    description: "Autorecarga de saldo",
+    stripePaymentIntentId: intent.id,
+  });
+
+  await supabaseAdmin.from("stripe_events").update({ related_user_id: userId }).eq("event_id", event.id);
+}
+
+/** Si la autorecarga falla (tarjeta rechazada, requiere 3DS...), se desactiva para no reintentar en bucle. */
+async function handlePaymentIntentFailed(event: Stripe.Event) {
+  const intent = event.data.object as Stripe.PaymentIntent;
+  if (intent.metadata?.kind !== "auto_recharge") return;
+
+  const userId = intent.metadata.user_id;
+  if (!userId) return;
+
+  await supabaseAdmin.from("user_balances").update({ auto_recharge_enabled: false }).eq("user_id", userId);
+  await supabaseAdmin.from("stripe_events").update({ related_user_id: userId }).eq("event_id", event.id);
+}
+
+/** Red de seguridad: guarda la tarjeta por si la llamada síncrona a /api/billing/payment-method/confirm no llegó a completarse. */
+async function handleSetupIntentSucceeded(event: Stripe.Event) {
+  const intent = event.data.object as Stripe.SetupIntent;
+  const userId = intent.metadata?.user_id;
+  if (!userId || !intent.payment_method) return;
+
+  const paymentMethodId =
+    typeof intent.payment_method === "string" ? intent.payment_method : intent.payment_method.id;
+  const customerId = typeof intent.customer === "string" ? intent.customer : intent.customer?.id;
+
+  await supabaseAdmin
+    .from("user_balances")
+    .update({ stripe_default_pm_id: paymentMethodId })
+    .eq("user_id", userId);
+
+  const { data: existingPm } = await supabaseAdmin
+    .from("payment_methods")
+    .select("id")
+    .eq("provider_payment_method_id", paymentMethodId)
+    .maybeSingle();
+
+  if (!existingPm) {
+    const { data: user } = await supabaseAdmin
+      .from("users")
+      .select("tenant_id")
+      .eq("id", userId)
+      .maybeSingle();
+    await supabaseAdmin.from("payment_methods").insert({
+      tenant_id: user?.tenant_id ?? null,
+      provider: "stripe",
+      provider_customer_id: customerId ?? null,
+      provider_payment_method_id: paymentMethodId,
+      status: "active",
+    });
+  }
+
+  await supabaseAdmin.from("stripe_events").update({ related_user_id: userId }).eq("event_id", event.id);
+}
+
 export async function POST(req: NextRequest) {
   const { webhookSecret } = requireStripeEnv(); // sin esto, no se procesa NADA (nunca en claro)
   const stripe = getStripeClient();
@@ -63,6 +135,12 @@ export async function POST(req: NextRequest) {
   try {
     if (event.type === "checkout.session.completed") {
       await handleCheckoutCompleted(event);
+    } else if (event.type === "payment_intent.succeeded") {
+      await handlePaymentIntentSucceeded(event);
+    } else if (event.type === "payment_intent.payment_failed") {
+      await handlePaymentIntentFailed(event);
+    } else if (event.type === "setup_intent.succeeded") {
+      await handleSetupIntentSucceeded(event);
     }
     await supabaseAdmin
       .from("stripe_events")

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { resolveTenantContext } from "@/lib/auth/tenant-context";
 import { adjustBalance, getPriceCentsForTier, getUserBalance } from "@/lib/wallet/ledger";
+import { maybeAutoRecharge } from "@/lib/wallet/auto-recharge";
 import { verifyRequestSignature } from "@/lib/auth/verify-signature";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -82,6 +83,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     price_cents: priceCents,
     order_id: order.id,
   });
+
+  await maybeAutoRecharge(owner.id);
 
   return NextResponse.json({ order: claimed, charged: true, priceCents });
 }

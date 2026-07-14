@@ -2,13 +2,58 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const ORDERS_PAGE_SIZE = 25;
+const EXPORT_LIMIT = 5000;
 
-export async function getOrdersPage(tenantId: string, page: number, pageSize = ORDERS_PAGE_SIZE) {
-  const { count, error: countError } = await supabaseAdmin
-    .from("orders")
-    .select("id", { count: "exact", head: true })
-    .eq("tenant_id", tenantId);
+export type OrdersFilter = {
+  from?: string;
+  to?: string;
+  q?: string;
+  sort?: string;
+  dir?: "asc" | "desc";
+};
 
+const SORTABLE_COLUMNS: Record<string, string> = {
+  fecha: "fecha_detectado",
+  precio: "precio_cents",
+  estado: "estado_impresion",
+  tk: "tk",
+  cliente: "cliente",
+};
+
+export function resolveSortColumn(sort?: string): string {
+  return SORTABLE_COLUMNS[sort ?? ""] ?? "fecha_detectado";
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyOrdersFilter(query: any, tenantId: string, filter: OrdersFilter) {
+  query = query.eq("tenant_id", tenantId);
+  if (filter.from) query = query.gte("fecha_detectado", filter.from);
+  if (filter.to) query = query.lte("fecha_detectado", filter.to);
+  if (filter.q) {
+    // Los operadores de PostgREST usan "," y "()" como separadores de su propia
+    // sintaxis: se eliminan del término de búsqueda para no romper el filtro.
+    const safe = filter.q.replace(/[,()]/g, "").trim();
+    if (safe) {
+      query = query.or(
+        `tk.ilike.%${safe}%,cliente.ilike.%${safe}%,external_order_id.ilike.%${safe}%`
+      );
+    }
+  }
+  return query;
+}
+
+export async function getOrdersPage(
+  tenantId: string,
+  page: number,
+  filter: OrdersFilter = {},
+  pageSize = ORDERS_PAGE_SIZE
+) {
+  const countQuery = applyOrdersFilter(
+    supabaseAdmin.from("orders").select("id", { count: "exact", head: true }),
+    tenantId,
+    filter
+  );
+  const { count, error: countError } = await countQuery;
   if (countError) throw new Error(`No se pudieron cargar los pedidos: ${countError.message}`);
 
   const total = count ?? 0;
@@ -21,16 +66,25 @@ export async function getOrdersPage(tenantId: string, page: number, pageSize = O
   const from = (safePage - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  const { data, error } = await supabaseAdmin
-    .from("orders")
-    .select("*")
-    .eq("tenant_id", tenantId)
-    .order("fecha_detectado", { ascending: false })
+  const dataQuery = applyOrdersFilter(supabaseAdmin.from("orders").select("*"), tenantId, filter)
+    .order(resolveSortColumn(filter.sort), { ascending: filter.dir === "asc" })
     .range(from, to);
 
+  const { data, error } = await dataQuery;
   if (error) throw new Error(`No se pudieron cargar los pedidos: ${error.message}`);
 
   return { orders: data ?? [], total };
+}
+
+/** Igual que getOrdersPage pero sin paginar (para exportar a CSV), con un tope de filas. */
+export async function getOrdersForExport(tenantId: string, filter: OrdersFilter = {}) {
+  const query = applyOrdersFilter(supabaseAdmin.from("orders").select("*"), tenantId, filter)
+    .order(resolveSortColumn(filter.sort), { ascending: filter.dir === "asc" })
+    .limit(EXPORT_LIMIT);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`No se pudieron exportar los pedidos: ${error.message}`);
+  return data ?? [];
 }
 
 export type OrdersStats = {

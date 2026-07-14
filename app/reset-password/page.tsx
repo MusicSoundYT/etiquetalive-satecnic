@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { AuthShell, FormField, inputClass, buttonClass, ErrorText } from "@/components/auth-shell";
 
@@ -21,6 +21,25 @@ function ResetPasswordForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const [tokenStatus, setTokenStatus] = useState<"checking" | "valid" | "invalid">(
+    token ? "checking" : "invalid",
+  );
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    fetch(`/api/auth/reset-password/validate?token=${encodeURIComponent(token)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) setTokenStatus(data.valid ? "valid" : "invalid");
+      })
+      .catch(() => {
+        if (!cancelled) setTokenStatus("invalid");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -54,12 +73,16 @@ function ResetPasswordForm() {
     }
   }
 
-  if (!token) {
+  if (tokenStatus === "checking") {
+    return <AuthShell title="Comprobando enlace…">{null}</AuthShell>;
+  }
+
+  if (tokenStatus === "invalid") {
     return (
-      <AuthShell title="Enlace inválido">
+      <AuthShell title="Enlace no disponible">
         <p className="text-sm text-zinc-700 dark:text-zinc-300">
-          Este enlace de recuperación no es válido. Solicita uno nuevo desde la pantalla de inicio
-          de sesión.
+          Este enlace de recuperación ya no está disponible: puede que ya se haya usado o que haya
+          caducado. Solicita uno nuevo desde la pantalla de inicio de sesión.
         </p>
       </AuthShell>
     );

@@ -1,6 +1,8 @@
 import { requireSession } from "@/lib/auth/require-session";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { ProfileForm } from "@/components/profile-form";
+import { ApiKeyPanel } from "@/components/api-key-panel";
+import { ExtensionSettingsPanel } from "@/components/extension-settings-panel";
 import { ChangePasswordForm } from "./change-password-form";
 
 export default async function AccountPage() {
@@ -55,6 +57,20 @@ export default async function AccountPage() {
             mejor precio te damos.
           </p>
         </div>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+          Clave API (extensión de Chrome)
+        </h2>
+        <ApiKeyPanel />
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+          Configuración de la extensión
+        </h2>
+        <ExtensionSettingsPanel />
       </section>
 
       <section>
