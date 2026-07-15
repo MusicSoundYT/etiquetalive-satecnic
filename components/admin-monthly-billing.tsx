@@ -9,6 +9,11 @@ const MONTH_NAMES = [
   "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
 ];
 
+// Año en que arrancó el sistema — el desplegable de año va desde aquí hasta
+// el año real actual (calculado con la fecha del propio navegador, así que
+// cada 1 de enero se añade el nuevo año solo, sin desplegar nada).
+const START_YEAR = 2026;
+
 function defaultYearMonth(): { year: number; month: number } {
   const now = new Date();
   const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
@@ -25,7 +30,11 @@ export function AdminMonthlyBilling() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const years = Array.from({ length: 5 }, (_, i) => initial.year - i + 1);
+  // De START_YEAR al año real actual (no al año del "mes por defecto", que es
+  // el mes anterior) — así en enero de un año nuevo el año actual ya aparece
+  // aunque el "mes por defecto" siga siendo diciembre del año anterior.
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: currentYear - START_YEAR + 1 }, (_, i) => currentYear - i);
   const selectClass =
     "rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100";
 
