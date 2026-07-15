@@ -3,6 +3,7 @@ import { z } from "zod";
 export const templateFieldsSchema = z.object({
   label_width_mm: z.number().min(20).max(300),
   label_height_mm: z.number().min(20).max(300),
+  auction_label_text: z.string().trim().min(1).max(30),
   show_auction: z.boolean(),
   show_cliente: z.boolean(),
   show_tiktok_name: z.boolean(),

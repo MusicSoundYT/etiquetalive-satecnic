@@ -82,7 +82,11 @@ export async function generateLabelHtml(
   const tiktokName = extractTikTokName(order.raw_payload);
 
   const rows = [
-    { enabled: t.show_auction, order: t.order_auction, html: `<div class="title">SUBASTA</div>` },
+    {
+      enabled: t.show_auction,
+      order: t.order_auction,
+      html: `<div class="title">${escapeHtml(t.auction_label_text || "SUBASTA")}</div>`,
+    },
     {
       enabled: t.show_cliente,
       order: t.order_cliente,

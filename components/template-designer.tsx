@@ -82,6 +82,11 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
   const [saving, setSaving] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Sin plantilla seleccionada (tras "Nueva plantilla" o al borrar la última):
+  // el formulario está "en blanco" y "Guardar cambios" no tiene nada que
+  // actualizar, así que solo se puede guardar vía "Guardar como nueva".
+  const isNew = selectedId === "";
+
   // Escala puramente visual: agranda/reduce TODAS las medidas de la etiqueta
   // (mm y pt) por igual, para que la vista previa ocupe un hueco razonable en
   // pantalla sin perder la proporción real. El servidor aplica esta misma
@@ -168,6 +173,46 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
     setTemplates((prev) => prev.map((t) => ({ ...t, is_default: t.id === selectedId })));
   }
 
+  // Deja el formulario en blanco (valores de fábrica) sin tocar ninguna
+  // plantilla existente, para que el usuario no pueda confundirse y sobrescribir
+  // la plantilla actual pensando que está creando una nueva.
+  function handleNewTemplate() {
+    setError(null);
+    setSelectedId("");
+    setNombre("Nueva plantilla");
+    setFields(DEFAULT_TEMPLATE_VALUES);
+  }
+
+  async function handleDelete() {
+    if (isNew) return;
+    const current = templates.find((t) => t.id === selectedId);
+    if (current?.is_default) {
+      setError("No puedes borrar la plantilla predeterminada.");
+      return;
+    }
+    if (!window.confirm(`¿Borrar la plantilla "${nombre}"? Esta acción no se puede deshacer.`)) return;
+
+    setError(null);
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/templates/${selectedId}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return setError(data.error ?? "No se pudo borrar la plantilla.");
+
+      const remaining = templates.filter((t) => t.id !== selectedId);
+      setTemplates(remaining);
+      const next = remaining.find((t) => t.is_default) ?? remaining[0];
+      if (next) {
+        setSelectedId(next.id);
+        setNombre(next.nombre);
+        setFields(next);
+      } else {
+        handleNewTemplate();
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="flex gap-8">
@@ -179,6 +224,7 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
             onChange={(e) => loadTemplate(e.target.value)}
             className="w-full rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-950"
           >
+            {isNew && <option value="">{nombre || "Nueva plantilla"} (sin guardar)</option>}
             {templates.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.nombre}
@@ -186,7 +232,9 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
               </option>
             ))}
           </select>
-          <label className="mb-1 mt-3 block text-xs text-zinc-500 dark:text-zinc-400">Nombre</label>
+          <label className="mb-1 mt-3 block text-xs text-zinc-500 dark:text-zinc-400">
+            Nombre {isNew && "(nueva plantilla, aún sin guardar)"}
+          </label>
           <input value={nombre} onChange={(e) => setNombre(e.target.value)} className={inputClass} />
         </div>
 
@@ -195,6 +243,20 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
             Campos a imprimir y orden
           </h3>
           {checkboxRow(fields, updateFields, "show_auction", "order_auction", "auction")}
+          {fields.show_auction && (
+            <div className="mb-1.5 mt-1 pl-6">
+              <label className="mb-1 block text-xs text-zinc-500 dark:text-zinc-400">
+                Texto de la etiqueta superior
+              </label>
+              <input
+                value={fields.auction_label_text}
+                onChange={(e) => updateFields({ ...fields, auction_label_text: e.target.value })}
+                maxLength={30}
+                placeholder="SUBASTA"
+                className={inputClass}
+              />
+            </div>
+          )}
           {checkboxRow(fields, updateFields, "show_cliente", "order_cliente", "cliente")}
           {checkboxRow(fields, updateFields, "show_tiktok_name", "order_tiktok_name", "tiktok_name")}
           {checkboxRow(fields, updateFields, "show_order_id", "order_order_id", "order_id")}
@@ -233,7 +295,7 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <button onClick={handleSave} disabled={saving} className={buttonClass}>
+          <button onClick={handleSave} disabled={saving || isNew} className={buttonClass}>
             {saving ? "Guardando..." : "Guardar cambios"}
           </button>
           <button
@@ -243,12 +305,28 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
           >
             Guardar como nueva
           </button>
+          <button
+            onClick={handleNewTemplate}
+            disabled={saving}
+            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            Nueva plantilla
+          </button>
           {templates.find((t) => t.id === selectedId)?.is_default === false && (
             <button
               onClick={handleSetDefault}
               className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
               Marcar como predeterminada
+            </button>
+          )}
+          {!isNew && templates.find((t) => t.id === selectedId)?.is_default === false && (
+            <button
+              onClick={handleDelete}
+              disabled={saving}
+              className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40"
+            >
+              Eliminar plantilla
             </button>
           )}
         </div>

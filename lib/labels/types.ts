@@ -5,6 +5,7 @@ export type LabelTemplate = {
   is_default: boolean;
   label_width_mm: number;
   label_height_mm: number;
+  auction_label_text: string;
   show_auction: boolean;
   show_cliente: boolean;
   show_tiktok_name: boolean;
@@ -37,6 +38,7 @@ export type LabelTemplate = {
 export const DEFAULT_TEMPLATE_VALUES: Omit<LabelTemplate, "id" | "tenant_id" | "nombre" | "is_default"> = {
   label_width_mm: 62,
   label_height_mm: 29,
+  auction_label_text: "SUBASTA",
   show_auction: true,
   show_cliente: true,
   show_tiktok_name: true,
