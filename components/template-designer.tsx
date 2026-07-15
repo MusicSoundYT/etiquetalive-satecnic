@@ -76,7 +76,11 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
   const defaultTpl = initialTemplates.find((t) => t.is_default) ?? initialTemplates[0];
   const [selectedId, setSelectedId] = useState(defaultTpl?.id ?? "");
   const [nombre, setNombre] = useState(defaultTpl?.nombre ?? "Plantilla");
-  const [fields, setFields] = useState<FieldsOnly>(defaultTpl ?? DEFAULT_TEMPLATE_VALUES);
+  const [fields, setFields] = useState<FieldsOnly>(() => {
+    if (!defaultTpl) return DEFAULT_TEMPLATE_VALUES;
+    const { id: _id, tenant_id: _tenantId, nombre: _nombre, is_default: _isDefault, ...rest } = defaultTpl;
+    return rest;
+  });
   const [previewHtml, setPreviewHtml] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -122,12 +126,21 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
     setFields(f);
   }
 
+  // Se extraen solo los campos de FieldsOnly (y no el objeto entero de la
+  // plantilla): "fields" nunca debe llevar nombre/id/tenant_id/is_default,
+  // porque un "{ nombre, ...fields }" con fields.nombre presente sobrescribiría
+  // silenciosamente el nombre editado por el usuario con el nombre antiguo.
+  function extractFields(t: LabelTemplate): FieldsOnly {
+    const { id: _id, tenant_id: _tenantId, nombre: _nombre, is_default: _isDefault, ...rest } = t;
+    return rest;
+  }
+
   function loadTemplate(id: string) {
     const t = templates.find((tpl) => tpl.id === id);
     if (!t) return;
     setSelectedId(id);
     setNombre(t.nombre);
-    setFields(t);
+    setFields(extractFields(t));
   }
 
   async function handleSave() {
@@ -137,7 +150,9 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
       const res = await fetch(`/api/templates/${selectedId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nombre, ...fields }),
+        // "nombre" va el último para que siempre gane sobre cualquier campo
+        // homónimo que pudiera colarse en "fields".
+        body: JSON.stringify({ ...fields, nombre }),
       });
       const data = await res.json();
       if (!res.ok) return setError(data.error ?? "No se pudo guardar.");
@@ -154,7 +169,7 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
       const res = await fetch("/api/templates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nombre, ...fields }),
+        body: JSON.stringify({ ...fields, nombre }),
       });
       const data = await res.json();
       if (!res.ok) return setError(data.error ?? "No se pudo guardar.");
@@ -205,7 +220,7 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
       if (next) {
         setSelectedId(next.id);
         setNombre(next.nombre);
-        setFields(next);
+        setFields(extractFields(next));
       } else {
         handleNewTemplate();
       }
