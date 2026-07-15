@@ -139,6 +139,7 @@ export function AdminOrdersPanel({
                       year: "numeric",
                       hour: "2-digit",
                       minute: "2-digit",
+                      second: "2-digit",
                     })}
                   </td>
                   <td className="break-words px-3 py-2 text-zinc-700 dark:text-zinc-300">{o.estado_impresion}</td>
