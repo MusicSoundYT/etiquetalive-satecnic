@@ -135,17 +135,17 @@ export function OrdersTable({
     <div>
       {actionError && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{actionError}</p>}
       <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
-        <table className="w-full min-w-[900px] text-sm">
+        <table className="w-full min-w-[900px] table-fixed text-sm">
           <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
             <tr>
-              <th className="px-4 py-2">{sortableHeader("tk", "TK")}</th>
-              <th className="px-4 py-2">ID de pedido</th>
-              <th className="px-4 py-2">{sortableHeader("cliente", "Cliente")}</th>
-              <th className="px-4 py-2">{sortableHeader("precio", "Precio")}</th>
-              <th className="px-4 py-2">{sortableHeader("fecha", "Fecha")}</th>
-              <th className="px-4 py-2">{sortableHeader("estado", "Estado")}</th>
-              <th className="px-4 py-2">Notas</th>
-              <th className="px-4 py-2">Acciones</th>
+              <th className="w-24 px-4 py-2">{sortableHeader("tk", "TK")}</th>
+              <th className="w-36 px-4 py-2">ID de pedido</th>
+              <th className="w-48 px-4 py-2">{sortableHeader("cliente", "Cliente")}</th>
+              <th className="w-24 px-4 py-2">{sortableHeader("precio", "Precio")}</th>
+              <th className="w-28 px-4 py-2">{sortableHeader("fecha", "Fecha")}</th>
+              <th className="w-24 px-4 py-2">{sortableHeader("estado", "Estado")}</th>
+              <th className="w-40 px-4 py-2">Notas</th>
+              <th className="w-40 px-4 py-2">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-900">
@@ -158,16 +158,16 @@ export function OrdersTable({
             ) : (
               orders.map((o) => (
                 <tr key={o.id}>
-                  <td className="px-4 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300">{o.tk}</td>
-                  <td className="px-4 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300">
+                  <td className="break-words px-4 py-2 text-zinc-700 dark:text-zinc-300">{o.tk}</td>
+                  <td className="break-all px-4 py-2 text-zinc-700 dark:text-zinc-300">
                     {o.external_order_id ?? "—"}
                   </td>
-                  <td className="px-4 py-2 text-zinc-700 dark:text-zinc-300">{o.cliente ?? "—"}</td>
-                  <td className="px-4 py-2 text-zinc-700 dark:text-zinc-300">
+                  <td className="break-words px-4 py-2 text-zinc-700 dark:text-zinc-300">{o.cliente ?? "—"}</td>
+                  <td className="break-words px-4 py-2 text-zinc-700 dark:text-zinc-300">
                     {(o.precio_cents / 100).toFixed(2)}
                     {o.moneda === "EUR" ? "€" : o.moneda}
                   </td>
-                  <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400">
+                  <td className="break-words px-4 py-2 text-zinc-700 dark:text-zinc-300">
                     {new Date(o.fecha_detectado).toLocaleDateString("es-ES", {
                       day: "2-digit",
                       month: "2-digit",
@@ -182,11 +182,11 @@ export function OrdersTable({
                       defaultValue={o.notes ?? ""}
                       placeholder="Añadir nota…"
                       onBlur={(e) => handleNotesBlur(o, e.target.value)}
-                      className="w-40 rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-zinc-700 hover:border-zinc-300 focus:border-zinc-400 focus:outline-none dark:text-zinc-300 dark:hover:border-zinc-700"
+                      className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-zinc-700 hover:border-zinc-300 focus:border-zinc-400 focus:outline-none dark:text-zinc-300 dark:hover:border-zinc-700"
                     />
                   </td>
                   <td className="px-4 py-2">
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <Link
                         href={`/orders/${o.id}`}
                         className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
