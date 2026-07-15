@@ -12,7 +12,11 @@ type AdminUser = {
   tenant_status: string;
   total_consumed_cents: number;
   balance: { current_tier: number; balance_cents: number; is_blocked: boolean; is_demo: boolean } | null;
+  mfa_enabled: boolean;
+  mfa_method: "totp" | "email" | null;
 };
+
+const MFA_METHOD_LABELS: Record<string, string> = { totp: "QR", email: "Email" };
 
 const smallInputClass =
   "rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-zinc-100 dark:focus:ring-zinc-100";
@@ -28,6 +32,7 @@ export function AdminUsersTable({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ name: "", lastName: "", email: "" });
   const [editError, setEditError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   function loadUsers() {
     return fetch("/api/admin/users")
@@ -88,6 +93,30 @@ export function AdminUsersTable({
     }
   }
 
+  async function resetMfa(userId: string) {
+    if (
+      !confirm(
+        "¿Restablecer la verificación en dos pasos de este usuario? Se cerrarán todas sus sesiones activas y deberá configurarla de nuevo al iniciar sesión."
+      )
+    )
+      return;
+    setActionError(null);
+    setSavingId(userId);
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/mfa-reset`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setActionError(data.error ?? "No se pudo restablecer la verificación en dos pasos.");
+        return;
+      }
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, mfa_enabled: false, mfa_method: null } : u))
+      );
+    } finally {
+      setSavingId(null);
+    }
+  }
+
   function startEdit(u: AdminUser) {
     setEditingId(u.id);
     setEditError(null);
@@ -122,7 +151,9 @@ export function AdminUsersTable({
   if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">Cargando…</p>;
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+    <div>
+      {actionError && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{actionError}</p>}
+      <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
       <table className="w-full min-w-[900px] text-sm">
         <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
           <tr>
@@ -133,6 +164,7 @@ export function AdminUsersTable({
             <th className="px-4 py-2">Rango</th>
             <th className="px-4 py-2">Demo</th>
             <th className="px-4 py-2">Estado</th>
+            <th className="px-4 py-2">MFA</th>
             <th className="px-4 py-2">Acciones</th>
           </tr>
         </thead>
@@ -207,13 +239,31 @@ export function AdminUsersTable({
                   </span>
                 </td>
                 <td className="px-4 py-2">
-                  <div className="flex gap-2">
+                  {u.mfa_enabled && u.mfa_method ? (
+                    <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                      {MFA_METHOD_LABELS[u.mfa_method] ?? u.mfa_method}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-zinc-400 dark:text-zinc-500">—</span>
+                  )}
+                </td>
+                <td className="px-4 py-2">
+                  <div className="flex flex-wrap gap-2">
                     <button
                       onClick={() => (editingId === u.id ? setEditingId(null) : startEdit(u))}
                       className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
                     >
                       Editar
                     </button>
+                    {u.mfa_enabled && (
+                      <button
+                        onClick={() => resetMfa(u.id)}
+                        disabled={savingId === u.id}
+                        className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      >
+                        Resetear MFA
+                      </button>
+                    )}
                     <button
                       onClick={() => toggleStatus(u.id, u.tenant_status !== "active")}
                       disabled={savingId === u.id}
@@ -226,7 +276,7 @@ export function AdminUsersTable({
               </tr>
               {editingId === u.id && (
                 <tr>
-                  <td colSpan={8} className="bg-zinc-50 px-4 py-3 dark:bg-zinc-950">
+                  <td colSpan={9} className="bg-zinc-50 px-4 py-3 dark:bg-zinc-950">
                     <div className="flex flex-wrap items-end gap-3">
                       <div>
                         <label className="mb-1 block text-xs text-zinc-500 dark:text-zinc-400">Nombre</label>
@@ -275,6 +325,7 @@ export function AdminUsersTable({
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

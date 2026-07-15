@@ -79,6 +79,15 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   return user as SessionUser | null;
 }
 
+/** Revoca TODAS las sesiones activas de un usuario (cierre de sesión en todos los dispositivos). */
+export async function revokeAllSessionsForUser(userId: string): Promise<void> {
+  await supabaseAdmin
+    .from("auth_sessions")
+    .update({ revoked_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .is("revoked_at", null);
+}
+
 export async function revokeCurrentSession(): Promise<void> {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;

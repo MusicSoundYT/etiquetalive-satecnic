@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { ProfileForm } from "@/components/profile-form";
 import { ApiKeyPanel } from "@/components/api-key-panel";
 import { ExtensionSettingsPanel } from "@/components/extension-settings-panel";
+import { MfaPanel } from "@/components/mfa-panel";
 import { ChangePasswordForm } from "./change-password-form";
 
 export default async function AccountPage() {
@@ -12,6 +13,12 @@ export default async function AccountPage() {
     .from("user_balances")
     .select("current_tier, balance_cents")
     .eq("user_id", user.id)
+    .maybeSingle();
+
+  const { data: mfaRow } = await supabaseAdmin
+    .from("users")
+    .select("mfa_method")
+    .eq("id", user.id)
     .maybeSingle();
 
   const { data: tier } = balance
@@ -71,6 +78,13 @@ export default async function AccountPage() {
           Configuración de la extensión
         </h2>
         <ExtensionSettingsPanel />
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+          Verificación en dos pasos
+        </h2>
+        <MfaPanel method={mfaRow?.mfa_method ?? null} />
       </section>
 
       <section>
