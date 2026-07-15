@@ -6,6 +6,12 @@ import { DEFAULT_TEMPLATE_VALUES, type LabelTemplate } from "@/lib/labels/types"
 
 type FieldsOnly = Omit<LabelTemplate, "id" | "tenant_id" | "nombre" | "is_default">;
 
+// Conversión estándar CSS (96px = 1in = 25.4mm), la misma que usa el navegador
+// para renderizar unidades "mm" — con esto el tamaño en pantalla del iframe y
+// el de su contenido (ambos en mm) siempre coinciden exactamente.
+const MM_TO_PX = 96 / 25.4;
+const MAX_PREVIEW_PX = 260;
+
 const FIELD_LABELS: Record<string, string> = {
   auction: "Subasta",
   cliente: "Cliente",
@@ -76,21 +82,36 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
   const [saving, setSaving] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const refreshPreview = useCallback((f: FieldsOnly) => {
+  // Escala puramente visual: agranda/reduce TODAS las medidas de la etiqueta
+  // (mm y pt) por igual, para que la vista previa ocupe un hueco razonable en
+  // pantalla sin perder la proporción real. El servidor aplica esta misma
+  // escala al generar el HTML de prueba, y aquí se usa la conversión CSS
+  // estándar (mm→px) para que el marco del iframe y su contenido —ambos en
+  // mm— coincidan exactamente, sin huecos en blanco alrededor.
+  const previewScale = Math.min(
+    MAX_PREVIEW_PX / (Math.max(fields.label_width_mm, 1) * MM_TO_PX),
+    MAX_PREVIEW_PX / (Math.max(fields.label_height_mm, 1) * MM_TO_PX)
+  );
+  const previewSize = {
+    widthMm: fields.label_width_mm * previewScale,
+    heightMm: fields.label_height_mm * previewScale,
+  };
+
+  const refreshPreview = useCallback((f: FieldsOnly, scale: number) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       const res = await fetch("/api/templates/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(f),
+        body: JSON.stringify({ fields: f, previewScale: scale }),
       });
       if (res.ok) setPreviewHtml(await res.text());
     }, 300);
   }, []);
 
   useEffect(() => {
-    refreshPreview(fields);
-  }, [fields, refreshPreview]);
+    refreshPreview(fields, previewScale);
+  }, [fields, previewScale, refreshPreview]);
 
   function updateFields(f: FieldsOnly) {
     setFields(f);
@@ -146,6 +167,7 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
     if (!res.ok) return setError(data.error ?? "No se pudo marcar como predeterminada.");
     setTemplates((prev) => prev.map((t) => ({ ...t, is_default: t.id === selectedId })));
   }
+
 
   return (
     <div className="flex gap-8">
@@ -235,11 +257,15 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
 
       <div className="sticky top-4 w-80 flex-none self-start">
         <h3 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Vista previa</h3>
-        <div className="rounded-lg border border-zinc-200 bg-zinc-100 p-6 dark:border-zinc-800 dark:bg-zinc-950">
+        <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+          A escala — refleja la proporción real de {fields.label_width_mm}×{fields.label_height_mm}mm.
+        </p>
+        <div className="flex min-h-[220px] items-center justify-center rounded-lg border border-zinc-200 bg-zinc-100 p-6 dark:border-zinc-800 dark:bg-zinc-950">
           <iframe
             srcDoc={previewHtml}
             title="Vista previa de la etiqueta"
-            className="mx-auto h-40 w-full max-w-xs bg-white"
+            style={{ width: `${previewSize.widthMm}mm`, height: `${previewSize.heightMm}mm` }}
+            className="border border-zinc-300 bg-white shadow-sm dark:border-zinc-700"
           />
         </div>
       </div>
