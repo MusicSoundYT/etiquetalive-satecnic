@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { consumeMfaChallenge, issueMfaChallenge } from "@/lib/auth/mfa-challenge";
 import { generateTotpSecret, generateTotpQrDataUrl, verifyTotpCode } from "@/lib/auth/totp";
 import { createSession } from "@/lib/auth/session";
+import { isRateLimited } from "@/lib/auth/rate-limit";
 
 function clientIp(req: NextRequest): string {
   return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
@@ -38,7 +39,7 @@ export async function GET() {
 
 const bodySchema = z.object({ code: z.string().trim().length(6) });
 
-/** Confirma el código escaneado y activa el MFA de forma definitiva, abriendo sesión. */
+/** Confirma el código escaneado y activa el MFA (método QR) de forma definitiva, abriendo sesión. */
 export async function POST(req: NextRequest) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -48,6 +49,10 @@ export async function POST(req: NextRequest) {
   const userId = await consumeMfaChallenge();
   if (!userId) {
     return NextResponse.json({ error: "Reto de MFA no válido o caducado." }, { status: 401 });
+  }
+
+  if (isRateLimited(`mfa:${userId}`)) {
+    return NextResponse.json({ error: "Demasiados intentos. Inicia sesión de nuevo." }, { status: 429 });
   }
 
   const { data: user } = await supabaseAdmin
@@ -70,7 +75,7 @@ export async function POST(req: NextRequest) {
 
   await supabaseAdmin
     .from("users")
-    .update({ mfa_enabled: true, mfa_enrolled_at: new Date().toISOString() })
+    .update({ mfa_enabled: true, mfa_method: "totp", mfa_enrolled_at: new Date().toISOString() })
     .eq("id", userId);
 
   await createSession(userId, {
@@ -81,7 +86,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ status: "ok" });
 }
 
-// El GET necesita leer el reto sin consumirlo (el usuario puede recargar /mfa/setup
+// El GET necesita leer el reto sin consumirlo (el usuario puede recargar /mfa
 // varias veces antes de introducir el código), así que reemitimos uno nuevo con la
 // misma validez tras leerlo.
 async function consumeMfaChallengeKeepAlive(): Promise<string | null> {
