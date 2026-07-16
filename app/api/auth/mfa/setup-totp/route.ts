@@ -7,7 +7,9 @@ import { createSession } from "@/lib/auth/session";
 import { isRateLimited } from "@/lib/auth/rate-limit";
 
 function clientIp(req: NextRequest): string {
-  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  // Último salto = el que añade nuestro propio proxy (nginx); el primero
+  // podría venir falsificado por el propio cliente.
+  return req.headers.get("x-forwarded-for")?.split(",").pop()?.trim() || "unknown";
 }
 
 /** Genera (o recupera) el secreto TOTP pendiente de confirmar y devuelve el QR. */

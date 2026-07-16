@@ -9,7 +9,9 @@ import { isRateLimited } from "@/lib/auth/rate-limit";
 const bodySchema = z.object({ code: z.string().trim().length(6) });
 
 function clientIp(req: NextRequest): string {
-  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  // Último salto = el que añade nuestro propio proxy (nginx); el primero
+  // podría venir falsificado por el propio cliente.
+  return req.headers.get("x-forwarded-for")?.split(",").pop()?.trim() || "unknown";
 }
 
 /** Confirma el código recibido por correo y activa el MFA (método email) de forma definitiva, abriendo sesión. */

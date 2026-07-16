@@ -11,10 +11,19 @@ const bodySchema = z.object({
 });
 
 function clientIp(req: NextRequest): string {
-  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  // Último salto = el que añade nuestro propio proxy (nginx); el primero
+  // podría venir falsificado por el propio cliente.
+  return req.headers.get("x-forwarded-for")?.split(",").pop()?.trim() || "unknown";
 }
 
 const GENERIC_ERROR = { error: "Email o contraseña incorrectos." } as const;
+
+// Hash bcrypt fijo, sin relación con ninguna contraseña real: cuando el
+// email no existe se compara igualmente contra él (y se descarta el
+// resultado) para que el tiempo de respuesta sea el mismo que con un email
+// registrado — si no, la ausencia del coste de bcrypt.compare() delataría
+// por timing qué emails están dados de alta, incluso con un mensaje genérico.
+const DUMMY_PASSWORD_HASH = "$2b$12$UB7ntIgK322xbfsKxq1YbOvwo8.fR1cFniKIkP7HlyxwTW6eo8STW";
 
 export async function POST(req: NextRequest) {
   const ip = clientIp(req);
@@ -35,6 +44,7 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
 
   if (!user || !user.password_hash) {
+    await verifyPassword(password, DUMMY_PASSWORD_HASH);
     return NextResponse.json(GENERIC_ERROR, { status: 401 });
   }
 

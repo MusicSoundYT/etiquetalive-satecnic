@@ -8,7 +8,9 @@ import { isRateLimited } from "@/lib/auth/rate-limit";
 const bodySchema = z.object({ email: z.string().trim().toLowerCase().email() });
 
 function clientIp(req: NextRequest): string {
-  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  // Último salto = el que añade nuestro propio proxy (nginx); el primero
+  // podría venir falsificado por el propio cliente.
+  return req.headers.get("x-forwarded-for")?.split(",").pop()?.trim() || "unknown";
 }
 
 const GENERIC_RESPONSE = { status: "ok", message: "Si el email existe, te hemos enviado instrucciones." };

@@ -20,7 +20,10 @@ export async function validateApiKey(req: NextRequest): Promise<string | null> {
   if (data.expires_at && new Date(data.expires_at).getTime() < Date.now()) return null;
   if (data.bcrypt_hash && !(await bcrypt.compare(key, data.bcrypt_hash))) return null;
 
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+  // El último salto de la cadena es el que añade nuestro propio proxy (nginx),
+  // así que es el único valor en el que se puede confiar — el primero podría
+  // venir falsificado por el propio cliente.
+  const ip = req.headers.get("x-forwarded-for")?.split(",").pop()?.trim() || null;
   await supabaseAdmin
     .from("api_keys")
     .update({

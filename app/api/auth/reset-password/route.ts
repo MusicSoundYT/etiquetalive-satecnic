@@ -11,7 +11,9 @@ const bodySchema = z.object({
 });
 
 function clientIp(req: NextRequest): string {
-  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  // Último salto = el que añade nuestro propio proxy (nginx); el primero
+  // podría venir falsificado por el propio cliente.
+  return req.headers.get("x-forwarded-for")?.split(",").pop()?.trim() || "unknown";
 }
 
 export async function POST(req: NextRequest) {
