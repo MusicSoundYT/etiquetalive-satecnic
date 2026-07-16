@@ -14,6 +14,7 @@ type AdminUser = {
   balance: { current_tier: number; balance_cents: number; is_blocked: boolean; is_demo: boolean } | null;
   mfa_enabled: boolean;
   mfa_method: "totp" | "email" | null;
+  mfa_exempt: boolean;
 };
 
 const MFA_METHOD_LABELS: Record<string, string> = { totp: "QR", email: "Email" };
@@ -119,6 +120,34 @@ export function AdminUsersTable({
       setUsers((prev) =>
         prev.map((u) => (u.id === userId ? { ...u, mfa_enabled: false, mfa_method: null } : u))
       );
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function toggleMfaExempt(userId: string, exempt: boolean) {
+    if (
+      !confirm(
+        exempt
+          ? "¿Eximir a este usuario de la verificación en dos pasos? Podrá iniciar sesión solo con su contraseña. Se le avisará por email."
+          : "¿Volver a exigir la verificación en dos pasos a este usuario? Se le avisará por email."
+      )
+    )
+      return;
+    setActionError(null);
+    setSavingId(userId);
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/mfa-exempt`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ exempt }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setActionError(data.error ?? "No se pudo actualizar la exención de MFA.");
+        return;
+      }
+      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, mfa_exempt: exempt } : u)));
     } finally {
       setSavingId(null);
     }
@@ -364,7 +393,14 @@ export function AdminUsersTable({
                   </span>
                 </td>
                 <td className="px-4 py-2">
-                  {u.mfa_enabled && u.mfa_method ? (
+                  {u.mfa_exempt ? (
+                    <span
+                      className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                      title="Exento de verificación en dos pasos"
+                    >
+                      Exento
+                    </span>
+                  ) : u.mfa_enabled && u.mfa_method ? (
                     <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
                       {MFA_METHOD_LABELS[u.mfa_method] ?? u.mfa_method}
                     </span>
@@ -380,7 +416,7 @@ export function AdminUsersTable({
                     >
                       Editar
                     </button>
-                    {u.mfa_enabled && (
+                    {u.mfa_enabled && !u.mfa_exempt && (
                       <button
                         onClick={() => resetMfa(u.id)}
                         disabled={savingId === u.id}
@@ -389,6 +425,13 @@ export function AdminUsersTable({
                         Resetear MFA
                       </button>
                     )}
+                    <button
+                      onClick={() => toggleMfaExempt(u.id, !u.mfa_exempt)}
+                      disabled={savingId === u.id}
+                      className="rounded border border-amber-300 px-2 py-1 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-950/40"
+                    >
+                      {u.mfa_exempt ? "Quitar exención MFA" : "Eximir de MFA"}
+                    </button>
                     <button
                       onClick={() => toggleStatus(u.id, u.tenant_status !== "active")}
                       disabled={savingId === u.id}

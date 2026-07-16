@@ -27,7 +27,7 @@ export default function LoginPage() {
         setError(data.error ?? "No se pudo iniciar sesión.");
         return;
       }
-      router.push("/mfa");
+      router.push(data.mfaExempt ? "/dashboard" : "/mfa");
     } finally {
       setLoading(false);
     }

@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { verifyPassword } from "@/lib/auth/password";
 import { isRateLimited } from "@/lib/auth/rate-limit";
 import { issueMfaChallenge } from "@/lib/auth/mfa-challenge";
+import { createSession } from "@/lib/auth/session";
 
 const bodySchema = z.object({
   email: z.string().trim().toLowerCase().email(),
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
 
   const { data: user } = await supabaseAdmin
     .from("users")
-    .select("id, tenant_id, password_hash, mfa_enabled")
+    .select("id, tenant_id, password_hash, mfa_enabled, mfa_exempt")
     .eq("email", email)
     .maybeSingle();
 
@@ -71,6 +72,14 @@ export async function POST(req: NextRequest) {
     .from("users")
     .update({ last_login_at: new Date().toISOString(), last_login_ip: ip })
     .eq("id", user.id);
+
+  // Exención explícita de un administrador (petición expresa del cliente):
+  // se salta el MFA por completo, incluso si el usuario ya lo tenía
+  // configurado, y se abre sesión directamente.
+  if (user.mfa_exempt) {
+    await createSession(user.id, { ip, userAgent: req.headers.get("user-agent") });
+    return NextResponse.json({ status: "ok", mfaExempt: true });
+  }
 
   await issueMfaChallenge(user.id);
 

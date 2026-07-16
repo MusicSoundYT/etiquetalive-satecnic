@@ -13,7 +13,7 @@ export async function GET() {
   const [{ data: users, error }, processedRows] = await Promise.all([
     supabaseAdmin
       .from("users")
-      .select("id, email, name, last_name, tenant_id, is_admin, created_at, mfa_enabled, mfa_method")
+      .select("id, email, name, last_name, tenant_id, is_admin, created_at, mfa_enabled, mfa_method, mfa_exempt")
       .order("created_at", { ascending: false }),
     // Consumo total desde el alta: suma de orders_processed.price_cents por
     // tenant (PostgREST limita a 1000 filas por página, se pagina completo).
