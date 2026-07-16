@@ -1,4 +1,4 @@
-const VERSION = "el-1.6.14-auction";
+const VERSION = "el-1.6.15-auction";
 const API_BASE = "https://etiquetalivetiktok.satecnic.es";
 const DEFAULT_CONFIG = {
   configVersion: "local-default-1",
@@ -21,6 +21,9 @@ const stateByTab = new Map();
 async function signRequest(body, apiKey) {
   // HMAC-SHA256 real usando la propia API key del tenant como clave —
   // sustituye el hash de 32 bits + secreto placeholder que nunca se resolvía.
+  // WebCrypto lanza "DataError: HMAC key data must not be empty" si la clave
+  // está vacía (p. ej. justo tras instalar, antes de configurar la API key).
+  if (!apiKey) return "";
   const enc = new TextEncoder();
   const str = typeof body === "string" ? body : JSON.stringify(body || {});
   const key = await crypto.subtle.importKey(
@@ -64,14 +67,15 @@ async function refreshRemoteConfig(reason = "startup") {
 }
 
 async function postToEtiquetaLive(path, data) {
-  const body = JSON.stringify(data);
   const apiKey = await getApiKey();
+  if (!apiKey) return null; // sin clave configurada todavía, el servidor la rechazaría igualmente
+  const body = JSON.stringify(data);
   return fetch(apiBase() + path, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "x-el-sign": await signRequest(body, apiKey),
-      ...(apiKey ? { "x-api-key": apiKey } : {})
+      "x-api-key": apiKey
     },
     body
   }).catch(() => null);

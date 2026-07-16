@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.14";
+  const VERSION = "el-1.6.15";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const DEFAULT_CONFIG = {
     apiBase: API_BASE,
@@ -39,6 +39,10 @@
   async function signRequest(body, apiKey) {
     // HMAC-SHA256 real usando la propia API key del tenant como clave —
     // sustituye el hash de 32 bits + secreto placeholder que nunca se resolvía.
+    // WebCrypto lanza "DataError: HMAC key data must not be empty" si la clave
+    // está vacía (p. ej. justo tras instalar, antes de configurar la API key) —
+    // se corta aquí para no propagar una promesa rechazada sin capturar.
+    if (!apiKey) return "";
     const enc = new TextEncoder();
     const str = typeof body === 'string' ? body : JSON.stringify(body || {});
     const key = await crypto.subtle.importKey(
@@ -263,6 +267,35 @@
     return postDetectedOrder(`/api/v1/orders/${encodeURIComponent(tk)}/mark-print-api`, { action: action || "extension_print_invoked" });
   }
 
+  // El <script> embebido en la etiqueta (autofit de texto largo, bloqueo de
+  // clic derecho) puede quedar bloqueado por la CSP que Chrome aplica a las
+  // ventanas about:blank abiertas desde un content script ("Executing inline
+  // script violates... script-src"). Se reproduce aquí esa misma lógica
+  // directamente desde la extensión, que no está sujeta a esa CSP, para que
+  // funcione siempre, la bloquee o no el navegador.
+  function fitAutoTextInWindow(win) {
+    try {
+      win.document.querySelectorAll('.autofit-text').forEach((el) => {
+        el.style.fontSize = '';
+        let size = parseFloat(win.getComputedStyle(el).fontSize) || 10;
+        const min = 6;
+        let guard = 0;
+        while (el.scrollWidth > el.clientWidth && size > min && guard < 24) {
+          size -= 0.5;
+          el.style.fontSize = size + 'px';
+          guard++;
+        }
+      });
+    } catch (_) {}
+  }
+
+  function protectWindowContent(win) {
+    try {
+      win.document.addEventListener('contextmenu', (e) => e.preventDefault());
+      win.document.addEventListener('dragstart', (e) => e.preventDefault());
+    } catch (_) {}
+  }
+
   function waitForImagesAndPrint(win, cleanup, tk) {
     let cleaned = false;
     const runCleanup = () => {
@@ -272,6 +305,7 @@
     };
     try { win.addEventListener('afterprint', () => setTimeout(runCleanup, 350), { once: true }); } catch(e) {}
     const doPrint = async () => {
+      fitAutoTextInWindow(win);
       try { await markPrintApi(tk, "extension_before_print"); } catch(e) {}
       try { win.focus(); win.print(); } catch(e) {}
       setTimeout(runCleanup, 12000);
@@ -301,6 +335,7 @@
         w.document.open();
         w.document.write(labelHtml);
         w.document.close();
+        protectWindowContent(w);
         waitForImagesAndPrint(w, () => { try { w.close(); } catch(e) {} }, tk);
         return;
       }
@@ -318,6 +353,7 @@
     iframe.contentDocument.open();
     iframe.contentDocument.write(labelHtml);
     iframe.contentDocument.close();
+    protectWindowContent(iframe.contentWindow);
     waitForImagesAndPrint(iframe.contentWindow, () => iframe.remove(), tk);
   }
 
@@ -409,14 +445,15 @@
   }
 
   async function post(path, data) {
-    const body = JSON.stringify(data);
     const apiKey = await getApiKey();
+    if (!apiKey) return; // sin clave configurada todavía, el servidor la rechazaría igualmente
+    const body = JSON.stringify(data);
     fetch(apiBase() + path, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-el-sign": await signRequest(body, apiKey),
-        ...(apiKey ? { "x-api-key": apiKey } : {})
+        "x-api-key": apiKey
       },
       body: body
     }).catch(() => {});

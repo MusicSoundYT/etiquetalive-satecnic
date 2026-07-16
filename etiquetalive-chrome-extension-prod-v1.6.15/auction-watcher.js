@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.14-auction";
+  const VERSION = "el-1.6.15-auction";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const SCAN_INTERVAL_MS = 2500;
   const MUTATION_DEBOUNCE_MS = 1000;
@@ -12,6 +12,9 @@
 
   async function signRequest(body, apiKey) {
     // HMAC-SHA256 real usando la propia API key del tenant como clave.
+    // WebCrypto lanza "DataError: HMAC key data must not be empty" si la clave
+    // está vacía (p. ej. justo tras instalar, antes de configurar la API key).
+    if (!apiKey) return "";
     const enc = new TextEncoder();
     const str = typeof body === "string" ? body : JSON.stringify(body || {});
     const key = await crypto.subtle.importKey(
@@ -50,6 +53,7 @@
 
   async function postAuctionEvent(event) {
     const apiKey = await getApiKey();
+    if (!apiKey) return; // sin clave configurada todavía, el servidor la rechazaría igualmente
     const body = JSON.stringify({ version: VERSION, event });
     try {
       await fetch(apiBase() + "/api/auction/event", {
@@ -57,7 +61,7 @@
         headers: {
           "Content-Type": "application/json",
           "x-el-sign": await signRequest(body, apiKey),
-          ...(apiKey ? { "x-api-key": apiKey } : {})
+          "x-api-key": apiKey
         },
         body
       });
