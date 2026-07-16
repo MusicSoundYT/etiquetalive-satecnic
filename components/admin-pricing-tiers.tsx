@@ -32,7 +32,7 @@ export function AdminPricingTiers() {
       {tiers.map((t) => (
         <div
           key={t.tier}
-          className="flex items-center gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900"
+          className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900"
         >
           <span className="w-16 text-sm font-medium text-zinc-500 dark:text-zinc-400">Rango {t.tier}</span>
           <input

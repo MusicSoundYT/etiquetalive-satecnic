@@ -35,6 +35,11 @@ export function AdminMonthlyBilling() {
   const [month, setMonth] = useState(initial.month);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
+  // Rango de exportación: "hasta" es siempre el mes que se está viendo
+  // arriba; "desde" empieza igual a "hasta" (exporta solo ese mes por
+  // defecto) y se puede llevar más atrás para exportar varios meses juntos.
+  const [exportFromYear, setExportFromYear] = useState(initial.year);
+  const [exportFromMonth, setExportFromMonth] = useState(initial.month);
 
   // De START_YEAR al año real actual, calculado con la fecha del propio
   // navegador — así cada 1 de enero se añade el año nuevo solo.
@@ -115,6 +120,45 @@ export function AdminMonthlyBilling() {
             {loading || !summary ? "…" : summary.tenantsCount}
           </div>
         </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+        <div>
+          <label className="mb-1 block text-xs text-zinc-500 dark:text-zinc-400">Exportar CSV desde</label>
+          <div className="flex gap-2">
+            <select
+              value={exportFromMonth}
+              onChange={(e) => setExportFromMonth(Number(e.target.value))}
+              className={selectClass}
+            >
+              {MONTH_NAMES.map((name, i) => (
+                <option key={name} value={i + 1}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={exportFromYear}
+              onChange={(e) => setExportFromYear(Number(e.target.value))}
+              className={selectClass}
+            >
+              {years.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <span className="pb-2 text-xs text-zinc-500 dark:text-zinc-400">
+          hasta {MONTH_NAMES[month - 1]} de {year}
+        </span>
+        <a
+          href={`/api/admin/billing-summary/export?fromYear=${exportFromYear}&fromMonth=${exportFromMonth}&toYear=${year}&toMonth=${month}`}
+          className="rounded border border-zinc-300 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        >
+          Exportar CSV
+        </a>
       </div>
     </div>
   );
