@@ -140,8 +140,15 @@ export async function POST(req: NextRequest) {
     });
 
   if (insertError) {
-    // Conflicto de PK (event_id ya existe) = evento repetido, se responde 200 sin reprocesar.
-    return NextResponse.json({ status: "duplicate" });
+    if (insertError.code === "23505") {
+      // Conflicto de PK (event_id ya existe) = evento repetido, se responde 200 sin reprocesar.
+      return NextResponse.json({ status: "duplicate" });
+    }
+    // Cualquier OTRO error (p. ej. un corte puntual de conexión con la BD) no es
+    // un duplicado real: si respondiéramos 200 aquí, Stripe daría el evento por
+    // entregado y nunca lo reintentaría, perdiendo esa recarga para siempre.
+    console.error("Error guardando el evento de Stripe (se pide reintento):", insertError);
+    return NextResponse.json({ error: "No se pudo registrar el evento." }, { status: 500 });
   }
 
   try {
@@ -159,6 +166,7 @@ export async function POST(req: NextRequest) {
       .update({ processed_at: new Date().toISOString() })
       .eq("event_id", event.id);
   } catch (err) {
+    console.error(`Error procesando el evento de Stripe ${event.id} (${event.type}):`, err);
     await supabaseAdmin
       .from("stripe_events")
       .update({ processing_error: (err as Error).message })
