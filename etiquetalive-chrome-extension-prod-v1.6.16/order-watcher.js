@@ -1,15 +1,12 @@
 (() => {
-  const VERSION = "el-1.6.15";
+  const VERSION = "el-1.6.16";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const DEFAULT_CONFIG = {
     apiBase: API_BASE,
     maxVisibleOrders: 12,
     domScanIntervalMs: 5000,
     mutationDebounceMs: 1800,
-    forceBackgroundPollIntervalMs: 60000,
-    controlledRefreshAfterMs: 15000,
-    controlledRefreshCooldownMs: 15000,
-    enableControlledRefreshFallback: true
+    forceBackgroundPollIntervalMs: 60000
   };
   let remoteConfig = { ...DEFAULT_CONFIG };
 
@@ -57,11 +54,11 @@
   let lastScanAt = 0;
   let lastChangeAt = Date.now();
   let lastBackgroundSyncAt = 0;
-  let sessionState = { active: false, startedAt: 0, stats: { detected: 0, printed: 0 }, detectedIds: [], printedIds: [], ignoredIds: [], baselineDone: false, autoPrintEnabled: true, sellerRefreshMs: 15000 };
+  let sessionState = { active: false, startedAt: 0, stats: { detected: 0, printed: 0 }, detectedIds: [], printedIds: [], ignoredIds: [], baselineDone: false, autoPrintEnabled: true };
 
   function loadSessionState(cb) {
     try {
-      chrome.storage.local.get(["el_print_session_active", "el_print_session_started_at", "el_print_session_stats", "el_print_session_detected_ids", "el_print_session_printed_ids", "el_print_session_ignored_ids", "el_print_session_baseline_done", "el_auto_print_enabled", "el_seller_refresh_ms"], (r) => {
+      chrome.storage.local.get(["el_print_session_active", "el_print_session_started_at", "el_print_session_stats", "el_print_session_detected_ids", "el_print_session_printed_ids", "el_print_session_ignored_ids", "el_print_session_baseline_done", "el_auto_print_enabled"], (r) => {
         sessionState = {
           active: Boolean(r.el_print_session_active),
           startedAt: Number(r.el_print_session_started_at || 0),
@@ -70,8 +67,7 @@
           printedIds: Array.isArray(r.el_print_session_printed_ids) ? r.el_print_session_printed_ids : [],
           ignoredIds: Array.isArray(r.el_print_session_ignored_ids) ? r.el_print_session_ignored_ids : [],
           baselineDone: Boolean(r.el_print_session_baseline_done),
-          autoPrintEnabled: r.el_auto_print_enabled !== false,
-          sellerRefreshMs: Math.max(15000, Math.min(300000, Number(r.el_seller_refresh_ms || 15000)))
+          autoPrintEnabled: r.el_auto_print_enabled !== false
         };
         if (cb) cb(sessionState);
       });
@@ -684,17 +680,6 @@
     scanTimer = setTimeout(() => scan(reason), Number(cfg("mutationDebounceMs")) || 1800);
   }
 
-  function controlledRefreshFallback() {
-    // Refresco suave periódico de Seller Orders: máximo 1 vez cada 60s desde la última recarga.
-    if (!cfg("enableControlledRefreshFallback")) return;
-    if (!/seller-es\.tiktok\.com\/order/i.test(location.href)) return;
-    const now = Date.now();
-    const lastReload = Number(sessionStorage.getItem("el_last_seller_reload") || sessionStorage.getItem("el_last_controlled_reload") || 0);
-    const refreshMs = Math.max(15000, Math.min(300000, Number(sessionState.sellerRefreshMs || cfg("controlledRefreshCooldownMs") || 15000)));
-    if (lastReload && now - lastReload < refreshMs) return;
-    scheduleSellerRefresh("seller_periodic_60s_refresh", {}, 900);
-  }
-
   post("/api/live/ping", { version: VERSION, reason: "order_watcher_background_sync_started", href: location.href, title: document.title, at: new Date().toISOString() });
 
   const start = () => {
@@ -705,7 +690,9 @@
     setTimeout(() => scan("initial_1500"), 1500);
     setInterval(() => scan("tick"), Number(cfg("domScanIntervalMs")) || 5000);
     setInterval(() => sendRuntimeMessage({ type: "EL_FORCE_BACKGROUND_POLL" }), Number(cfg("forceBackgroundPollIntervalMs")) || 60000);
-    setInterval(controlledRefreshFallback, 10000);
+    // La página de Seller Orders ya NO se recarga periódicamente por tiempo:
+    // solo se recarga cuando el crono de la subasta llega a 00:00 y se
+    // detecta el ganador (ver refreshSellerAfterAuctionWinner / scheduleSellerRefresh).
     const obs = new MutationObserver(() => scheduleScan("mutation"));
     obs.observe(document.documentElement || document.body, { childList: true, subtree: true, characterData: true });
   };

@@ -5,9 +5,8 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 /**
  * Usado por el popup de la extensión Chrome al pulsar "Conectar": si la key es
  * válida, confirma la conexión y devuelve la configuración real del tenant
- * (impresión automática y frecuencia de refresco), editable en Configuración.
- * El popup firma el literal "{}" para esta petición GET (no hay body real que
- * firmar).
+ * (impresión automática), editable en Configuración. El popup firma el
+ * literal "{}" para esta petición GET (no hay body real que firmar).
  */
 export async function GET(req: NextRequest) {
   const tenantId = await authenticateExtensionRequest(req, "{}");
@@ -15,12 +14,11 @@ export async function GET(req: NextRequest) {
 
   const { data } = await supabaseAdmin
     .from("tenants")
-    .select("auto_print_enabled, seller_refresh_seconds")
+    .select("auto_print_enabled")
     .eq("id", tenantId)
     .maybeSingle();
 
   return NextResponse.json({
     auto_print_enabled: data?.auto_print_enabled === false ? 0 : 1,
-    seller_refresh_seconds: data?.seller_refresh_seconds ?? 15,
   });
 }

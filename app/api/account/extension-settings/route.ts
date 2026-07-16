@@ -5,7 +5,6 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const bodySchema = z.object({
   autoPrintEnabled: z.boolean(),
-  sellerRefreshSeconds: z.number().int().min(15).max(300),
 });
 
 export async function GET() {
@@ -14,13 +13,12 @@ export async function GET() {
 
   const { data } = await supabaseAdmin
     .from("tenants")
-    .select("auto_print_enabled, seller_refresh_seconds")
+    .select("auto_print_enabled")
     .eq("id", user.tenant_id)
     .maybeSingle();
 
   return NextResponse.json({
     autoPrintEnabled: data?.auto_print_enabled ?? true,
-    sellerRefreshSeconds: data?.seller_refresh_seconds ?? 15,
   });
 }
 
@@ -33,10 +31,7 @@ export async function PATCH(req: NextRequest) {
 
   const { error } = await supabaseAdmin
     .from("tenants")
-    .update({
-      auto_print_enabled: parsed.data.autoPrintEnabled,
-      seller_refresh_seconds: parsed.data.sellerRefreshSeconds,
-    })
+    .update({ auto_print_enabled: parsed.data.autoPrintEnabled })
     .eq("id", user.tenant_id);
 
   if (error) return NextResponse.json({ error: "No se pudo guardar la configuración." }, { status: 500 });

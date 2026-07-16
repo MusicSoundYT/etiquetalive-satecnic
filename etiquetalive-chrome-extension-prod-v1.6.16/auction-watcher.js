@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.15-auction";
+  const VERSION = "el-1.6.16-auction";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const SCAN_INTERVAL_MS = 2500;
   const MUTATION_DEBOUNCE_MS = 1000;

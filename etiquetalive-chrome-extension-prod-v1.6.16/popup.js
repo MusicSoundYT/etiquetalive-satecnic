@@ -37,7 +37,7 @@ btn.onclick = async () => {
     const profile = await r.json().catch(() => ({}));
     const autoPrintEnabled = profile.auto_print_enabled !== 0;
     setMsg('ok', autoPrintEnabled ? '✅ Conectado · Auto impresión ON' : '✅ Conectado · Auto impresión OFF');
-    chrome.storage.local.set({el_api_key: k, el_auto_print_enabled: autoPrintEnabled, el_seller_refresh_ms: Math.max(15000, Math.min(300000, Number(profile.seller_refresh_seconds || 15) * 1000))});
+    chrome.storage.local.set({el_api_key: k, el_auto_print_enabled: autoPrintEnabled});
     sessionRow.style.display = 'flex';
   } catch(e) { setMsg('err', 'Error: ' + e.message); }
   finally { btn.disabled = false; btn.textContent = 'Conectar'; }
