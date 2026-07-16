@@ -3,7 +3,7 @@ import { getStripeClient } from "@/lib/stripe/client";
 import { requireStripeEnv } from "@/lib/env";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { adjustBalance } from "@/lib/wallet/ledger";
-import { processReferralOnRecharge } from "@/lib/referrals/process-recharge";
+import { processReferralOnRecharge, reverseReferralBonusIfQualifying } from "@/lib/referrals/process-recharge";
 import type Stripe from "stripe";
 
 // Necesario para poder verificar la firma sobre el body crudo.
@@ -17,10 +17,12 @@ async function handleCheckoutCompleted(event: Stripe.Event) {
   const amountCents = session.amount_total;
   if (!userId || !amountCents) return;
 
+  const paymentIntentId =
+    typeof session.payment_intent === "string" ? session.payment_intent : undefined;
+
   const { balanceAfterCents } = await adjustBalance(userId, amountCents, "recharge", {
     description: "Recarga de saldo",
-    stripePaymentIntentId:
-      typeof session.payment_intent === "string" ? session.payment_intent : undefined,
+    stripePaymentIntentId: paymentIntentId,
   });
 
   // Recarga con éxito: si venía de un aviso de saldo negativo, se resetea
@@ -32,7 +34,7 @@ async function handleCheckoutCompleted(event: Stripe.Event) {
 
   await supabaseAdmin.from("stripe_events").update({ related_user_id: userId }).eq("event_id", event.id);
 
-  await processReferralOnRecharge(userId, amountCents);
+  await processReferralOnRecharge(userId, amountCents, paymentIntentId);
 
   return balanceAfterCents;
 }
@@ -96,7 +98,7 @@ async function handleChargeRefunded(event: Stripe.Event) {
   // cualquier otro cobro de Stripe que pudiera existir en el futuro).
   const { data: originalTx } = await supabaseAdmin
     .from("balance_transactions")
-    .select("user_id")
+    .select("user_id, amount_cents")
     .eq("stripe_payment_intent_id", paymentIntentId)
     .eq("type", "recharge")
     .maybeSingle();
@@ -118,6 +120,13 @@ async function handleChargeRefunded(event: Stripe.Event) {
   });
 
   await supabaseAdmin.from("stripe_events").update({ related_user_id: originalTx.user_id }).eq("event_id", event.id);
+
+  // Si esta recarga concreta queda reembolsada del TODO (no un reembolso
+  // parcial) y fue la que originó un bono de referido, se retira también el
+  // bono — nunca por una recarga posterior del mismo usuario.
+  if (totalRefundedCents >= originalTx.amount_cents) {
+    await reverseReferralBonusIfQualifying(paymentIntentId);
+  }
 }
 
 /** Red de seguridad: guarda la tarjeta por si la llamada síncrona a /api/billing/payment-method/confirm no llegó a completarse. */
