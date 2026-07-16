@@ -87,6 +87,7 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
   const [testPrinting, setTestPrinting] = useState(false);
   const [testPrintError, setTestPrintError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const formTopRef = useRef<HTMLDivElement>(null);
 
   // Sin plantilla seleccionada (tras "Nueva plantilla" o al borrar la última):
   // el formulario está "en blanco" y "Guardar cambios" no tiene nada que
@@ -198,6 +199,7 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
     setSelectedId("");
     setNombre("Nueva plantilla");
     setFields(DEFAULT_TEMPLATE_VALUES);
+    formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   async function handleDelete() {
@@ -278,7 +280,7 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
 
   return (
     <div className="flex flex-col gap-8 lg:flex-row">
-      <div className="min-w-0 flex-1 space-y-6">
+      <div ref={formTopRef} className="min-w-0 flex-1 space-y-6">
         <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
           <label className="mb-1 block text-xs text-zinc-500 dark:text-zinc-400">Plantillas guardadas</label>
           <select
