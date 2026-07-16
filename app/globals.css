@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Los "dark:" de Tailwind pasan de seguir solo el sistema operativo (media
+   query) a seguir la clase .dark en <html> — así se puede elegir el tema a
+   mano (ver components/theme-toggle.tsx) y no solo en automático. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -12,11 +17,9 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 body {
