@@ -75,6 +75,51 @@ async function handlePaymentIntentFailed(event: Stripe.Event) {
   await supabaseAdmin.from("stripe_events").update({ related_user_id: userId }).eq("event_id", event.id);
 }
 
+/**
+ * Cuando se reembolsa (total o parcialmente) una recarga de saldo, se
+ * descuenta automáticamente el importe reembolsado del saldo del cliente —
+ * si no, el reembolso queda invisible para nosotros y el cliente se queda
+ * con saldo que ya no ha pagado. "charge.amount_refunded" es ACUMULADO (la
+ * suma de todos los reembolsos de ese cobro hasta ahora), así que se calcula
+ * solo la parte NUEVA respecto a lo que ya se hubiera aplicado antes, para
+ * que reembolsos parciales sucesivos o reintentos del webhook no descuenten
+ * de más.
+ */
+async function handleChargeRefunded(event: Stripe.Event) {
+  const charge = event.data.object as Stripe.Charge;
+  const paymentIntentId =
+    typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
+  const totalRefundedCents = charge.amount_refunded;
+  if (!paymentIntentId || !totalRefundedCents) return;
+
+  // Solo nos interesan los cobros que fueron una recarga de saldo (no
+  // cualquier otro cobro de Stripe que pudiera existir en el futuro).
+  const { data: originalTx } = await supabaseAdmin
+    .from("balance_transactions")
+    .select("user_id")
+    .eq("stripe_payment_intent_id", paymentIntentId)
+    .eq("type", "recharge")
+    .maybeSingle();
+  if (!originalTx) return;
+
+  const { data: previousRefunds } = await supabaseAdmin
+    .from("balance_transactions")
+    .select("amount_cents")
+    .eq("stripe_payment_intent_id", paymentIntentId)
+    .eq("type", "refund");
+  const alreadyRefundedCents = (previousRefunds ?? []).reduce((sum, r) => sum + Math.abs(r.amount_cents), 0);
+
+  const newlyRefundedCents = totalRefundedCents - alreadyRefundedCents;
+  if (newlyRefundedCents <= 0) return; // ya aplicado (reintento del webhook)
+
+  await adjustBalance(originalTx.user_id, -newlyRefundedCents, "refund", {
+    description: "Reembolso en Stripe de una recarga de saldo",
+    stripePaymentIntentId: paymentIntentId,
+  });
+
+  await supabaseAdmin.from("stripe_events").update({ related_user_id: originalTx.user_id }).eq("event_id", event.id);
+}
+
 /** Red de seguridad: guarda la tarjeta por si la llamada síncrona a /api/billing/payment-method/confirm no llegó a completarse. */
 async function handleSetupIntentSucceeded(event: Stripe.Event) {
   const intent = event.data.object as Stripe.SetupIntent;
@@ -160,6 +205,8 @@ export async function POST(req: NextRequest) {
       await handlePaymentIntentFailed(event);
     } else if (event.type === "setup_intent.succeeded") {
       await handleSetupIntentSucceeded(event);
+    } else if (event.type === "charge.refunded") {
+      await handleChargeRefunded(event);
     }
     await supabaseAdmin
       .from("stripe_events")

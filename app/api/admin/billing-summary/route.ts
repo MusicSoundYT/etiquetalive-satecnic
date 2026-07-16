@@ -36,14 +36,15 @@ export async function GET(req: NextRequest) {
         .lt("processed_at", end)
         .range(from, to)
     ),
-    // Dinero real cobrado por Stripe ese mes (recargas de saldo) — no tiene
-    // por qué coincidir con lo facturado por etiquetas del mismo mes: un
-    // cliente puede recargar en julio y consumir esas etiquetas en agosto.
+    // Dinero real cobrado por Stripe ese mes (recargas de saldo, netas de
+    // reembolsos — "refund" se guarda en negativo) — no tiene por qué
+    // coincidir con lo facturado por etiquetas del mismo mes: un cliente
+    // puede recargar en julio y consumir esas etiquetas en agosto.
     fetchAllRows<{ amount_cents: number }>((from, to) =>
       supabaseAdmin
         .from("balance_transactions")
         .select("amount_cents")
-        .eq("type", "recharge")
+        .in("type", ["recharge", "refund"])
         .gte("created_at", start)
         .lt("created_at", end)
         .range(from, to)
