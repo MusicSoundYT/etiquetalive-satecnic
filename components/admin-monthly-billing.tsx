@@ -23,8 +23,7 @@ const START_YEAR = 2026;
 
 function defaultYearMonth(): { year: number; month: number } {
   const now = new Date();
-  const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-  return { year: prev.getUTCFullYear(), month: prev.getUTCMonth() + 1 };
+  return { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 };
 }
 
 // Selects en vez de <input type="month">: ese control nativo no lo soportan
@@ -37,9 +36,8 @@ export function AdminMonthlyBilling() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // De START_YEAR al año real actual (no al año del "mes por defecto", que es
-  // el mes anterior) — así en enero de un año nuevo el año actual ya aparece
-  // aunque el "mes por defecto" siga siendo diciembre del año anterior.
+  // De START_YEAR al año real actual, calculado con la fecha del propio
+  // navegador — así cada 1 de enero se añade el año nuevo solo.
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: currentYear - START_YEAR + 1 }, (_, i) => currentYear - i);
   const selectClass =

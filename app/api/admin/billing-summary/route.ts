@@ -20,10 +20,11 @@ export async function GET(req: NextRequest) {
   if (!admin?.is_admin) return NextResponse.json({ error: "No autorizado." }, { status: 403 });
 
   const now = new Date();
-  // Por defecto, el mes anterior al actual.
-  const defaultDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-  const year = Number(req.nextUrl.searchParams.get("year")) || defaultDate.getUTCFullYear();
-  const month = Number(req.nextUrl.searchParams.get("month")) || defaultDate.getUTCMonth() + 1;
+  // Por defecto, el mes actual (el panel llama a este endpoint siempre con
+  // year/month explícitos, pero se mantiene un valor por defecto sensato
+  // por si se llama sin parámetros).
+  const year = Number(req.nextUrl.searchParams.get("year")) || now.getUTCFullYear();
+  const month = Number(req.nextUrl.searchParams.get("month")) || now.getUTCMonth() + 1;
 
   const { start, end } = monthRange(year, month);
 
