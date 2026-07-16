@@ -6,7 +6,7 @@ import { generateReferralCode } from "@/lib/referrals/code";
 import { isRateLimited } from "@/lib/auth/rate-limit";
 import { issueMfaChallenge } from "@/lib/auth/mfa-challenge";
 
-const CURRENT_TERMS_VERSION = "2026-07-14";
+const CURRENT_TERMS_VERSION = "2026-07-16";
 const CURRENT_PRIVACY_VERSION = "2026-07-14";
 
 const bodySchema = z.object({

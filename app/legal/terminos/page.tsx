@@ -43,9 +43,27 @@ export default function TerminosPage() {
           determinado. Todos los cobros se procesan a través de Stripe.
         </li>
         <li>Los precios indicados no incluyen impuestos aplicables, que se añadirán conforme a la normativa vigente.</li>
+        <li>
+          Una recarga de saldo solo puede reembolsarse si lo solicitas dentro de las 10 horas
+          siguientes al pago. Pasado ese plazo, o si el saldo recargado ya se ha consumido —total o
+          parcialmente— en la impresión de etiquetas, no es posible tramitar la devolución.
+        </li>
       </ul>
 
-      <h2>5. Obligaciones del usuario</h2>
+      <h2>5. Programa de referidos</h2>
+      <p>
+        Si invitas a otra persona con tu código de referido y esa persona realiza una recarga de
+        saldo de al menos 5€, ambos recibiréis un bono de 5€: la persona invitada recibe el bono
+        además del importe de su propia recarga (5€ de recarga + 5€ de bono = 10€ de saldo), y tú
+        recibes 5€ como agradecimiento por la invitación.
+      </p>
+      <p>
+        Si esa recarga que dio origen al bono es reembolsada conforme al apartado anterior, el
+        bono de 5€ se retira tanto de la cuenta de la persona invitada como de la cuenta de quien
+        la invitó.
+      </p>
+
+      <h2>6. Obligaciones del usuario</h2>
       <p>
         Te comprometes a usar el Servicio conforme a la ley, a no introducir datos que no tengas
         derecho a tratar, y a ser responsable, como responsable del tratamiento, de los datos de
@@ -53,41 +71,42 @@ export default function TerminosPage() {
         <a href="/legal/privacidad">Política de Privacidad</a>).
       </p>
 
-      <h2>6. Propiedad intelectual</h2>
+      <h2>7. Propiedad intelectual</h2>
       <p>
         El software, diseño y marca de Etiqueta Live son titularidad de LUCKY BARNAVIT, S.L. Se te
         concede una licencia de uso no exclusiva e intransferible, limitada a la duración de tu
         cuenta.
       </p>
 
-      <h2>7. Disponibilidad del Servicio</h2>
+      <h2>8. Disponibilidad del Servicio</h2>
       <p>
         Procuramos la máxima disponibilidad del Servicio, pero no garantizamos un funcionamiento
         ininterrumpido, ya que depende en parte de plataformas de terceros (TikTok) ajenas a
         nuestro control, y puede requerir mantenimientos programados.
       </p>
 
-      <h2>8. Responsabilidad</h2>
+      <h2>9. Responsabilidad</h2>
       <p>
         LUCKY BARNAVIT, S.L. no será responsable de daños indirectos o lucro cesante derivados del
         uso o imposibilidad de uso del Servicio, ni de errores en los datos detectados
         automáticamente desde plataformas de terceros.
       </p>
 
-      <h2>9. Duración y baja</h2>
+      <h2>10. Duración y baja</h2>
       <p>
         Puedes darte de baja del Servicio en cualquier momento. El saldo no consumido no es
-        reembolsable salvo que la normativa de consumidores aplicable disponga lo contrario.
+        reembolsable, salvo lo indicado en el apartado 4 sobre devolución de recargas dentro de
+        las 10 horas siguientes al pago.
       </p>
 
-      <h2>10. Modificaciones</h2>
+      <h2>11. Modificaciones</h2>
       <p>
         Podemos modificar estas condiciones o los precios del Servicio. Te informaremos de
         cualquier cambio relevante con antelación razonable a través del email asociado a tu
         cuenta.
       </p>
 
-      <h2>11. Legislación aplicable</h2>
+      <h2>12. Legislación aplicable</h2>
       <p>
         Estas condiciones se rigen por la legislación española, con sometimiento a los Juzgados y
         Tribunales de Barcelona, sin perjuicio de los fueros que correspondan a los consumidores.
