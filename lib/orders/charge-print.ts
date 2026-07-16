@@ -2,6 +2,39 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { adjustBalance, getPriceCentsForTier, getUserBalance } from "@/lib/wallet/ledger";
 import { maybeAutoRecharge } from "@/lib/wallet/auto-recharge";
+import { sendLowBalanceEmail } from "@/lib/mail/send-low-balance-email";
+
+// Margen de gracia: se permite que el saldo llegue hasta -2€ antes de
+// bloquear la impresión (p. ej. un cobro de 0,10€ con saldo a 0€ no debe
+// frenar un directo en marcha). Más allá de este límite, no se cobra más.
+const NEGATIVE_BALANCE_FLOOR_CENTS = -200;
+
+// No se envía un correo por cada intento bloqueado durante el mismo directo
+// (podrían ser decenas) — se espacían los avisos con este margen.
+const LOW_BALANCE_NOTICE_COOLDOWN_MS = 12 * 60 * 60 * 1000;
+
+async function notifyLowBalanceOnce(userId: string, email: string | undefined) {
+  if (!email) return;
+  try {
+    const { data } = await supabaseAdmin
+      .from("user_balances")
+      .select("low_balance_notified_at")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    const lastNotified = data?.low_balance_notified_at ? new Date(data.low_balance_notified_at).getTime() : 0;
+    if (Date.now() - lastNotified < LOW_BALANCE_NOTICE_COOLDOWN_MS) return;
+
+    await supabaseAdmin
+      .from("user_balances")
+      .update({ low_balance_notified_at: new Date().toISOString() })
+      .eq("user_id", userId);
+
+    await sendLowBalanceEmail(email);
+  } catch {
+    // Un fallo al avisar por email nunca debe romper la respuesta de cobro.
+  }
+}
 
 type OrderRow = Record<string, unknown> & {
   id: string;
@@ -36,7 +69,7 @@ export async function claimAndChargePrint(
 
   const { data: owner } = await supabaseAdmin
     .from("users")
-    .select("id")
+    .select("id, email")
     .eq("tenant_id", tenantId)
     .limit(1)
     .single();
@@ -50,10 +83,12 @@ export async function claimAndChargePrint(
     }
 
     const priceCents = await getPriceCentsForTier(balance?.current_tier ?? 1);
-    // Comprobación ANTES de reclamar el pedido: si no hay saldo suficiente, se
-    // rechaza sin marcar el pedido como cobrado, para poder reintentar tras
-    // recargar en vez de quedar "gratis" para siempre.
-    if ((balance?.balance_cents ?? 0) < priceCents) {
+    // Comprobación ANTES de reclamar el pedido: si el cobro dejaría el saldo
+    // por debajo del margen de gracia (-2€), se rechaza sin marcar el pedido
+    // como cobrado, para poder reintentar tras recargar en vez de quedar
+    // "gratis" para siempre.
+    if ((balance?.balance_cents ?? 0) - priceCents < NEGATIVE_BALANCE_FLOOR_CENTS) {
+      await notifyLowBalanceOnce(owner.id, owner.email);
       return { status: "insufficient_balance" };
     }
   }

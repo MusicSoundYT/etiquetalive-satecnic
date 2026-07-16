@@ -23,6 +23,13 @@ async function handleCheckoutCompleted(event: Stripe.Event) {
       typeof session.payment_intent === "string" ? session.payment_intent : undefined,
   });
 
+  // Recarga con éxito: si venía de un aviso de saldo negativo, se resetea
+  // para que un futuro episodio vuelva a notificar.
+  await supabaseAdmin
+    .from("user_balances")
+    .update({ low_balance_notified_at: null })
+    .eq("user_id", userId);
+
   await supabaseAdmin.from("stripe_events").update({ related_user_id: userId }).eq("event_id", event.id);
 
   await processReferralOnRecharge(userId, amountCents);
@@ -47,6 +54,11 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event) {
     description: "Autorecarga de saldo",
     stripePaymentIntentId: intent.id,
   });
+
+  await supabaseAdmin
+    .from("user_balances")
+    .update({ low_balance_notified_at: null })
+    .eq("user_id", userId);
 
   await supabaseAdmin.from("stripe_events").update({ related_user_id: userId }).eq("event_id", event.id);
 }
