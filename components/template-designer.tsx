@@ -230,7 +230,7 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
   }
 
   return (
-    <div className="flex gap-8">
+    <div className="flex flex-col gap-8 lg:flex-row">
       <div className="min-w-0 flex-1 space-y-6">
         <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
           <label className="mb-1 block text-xs text-zinc-500 dark:text-zinc-400">Plantillas guardadas</label>
@@ -348,7 +348,7 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
         <ErrorText message={error} />
       </div>
 
-      <div className="sticky top-4 w-80 flex-none self-start">
+      <div className="w-full flex-none self-start lg:sticky lg:top-4 lg:w-80">
         <h3 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Vista previa</h3>
         <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
           A escala — refleja la proporción real de {fields.label_width_mm}×{fields.label_height_mm}mm.

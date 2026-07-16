@@ -79,7 +79,7 @@ export function AdminMonthlyBilling() {
         )}
       </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-3">
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded border border-zinc-200 px-3 py-2 dark:border-zinc-800">
           <div className="text-[10px] uppercase text-zinc-400 dark:text-zinc-500">Facturado</div>
           <div className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">

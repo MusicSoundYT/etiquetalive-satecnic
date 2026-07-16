@@ -126,13 +126,13 @@ export function AdminOrdersPanel({
             ) : (
               orders.map((o) => (
                 <tr key={o.id}>
-                  <td className="break-words px-3 py-2 text-zinc-700 dark:text-zinc-300">{o.tk}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-zinc-700 dark:text-zinc-300">{o.tk}</td>
                   <td className="break-words px-3 py-2 text-zinc-700 dark:text-zinc-300">{o.cliente ?? "—"}</td>
-                  <td className="break-words px-3 py-2 text-zinc-700 dark:text-zinc-300">
+                  <td className="whitespace-nowrap px-3 py-2 text-zinc-700 dark:text-zinc-300">
                     {(o.precio_cents / 100).toFixed(2)}
                     {o.moneda === "EUR" ? "€" : o.moneda}
                   </td>
-                  <td className="break-words px-3 py-2 text-zinc-700 dark:text-zinc-300">
+                  <td className="whitespace-nowrap px-3 py-2 text-zinc-700 dark:text-zinc-300">
                     {new Date(o.fecha_detectado).toLocaleString("es-ES", {
                       day: "2-digit",
                       month: "2-digit",
@@ -142,7 +142,7 @@ export function AdminOrdersPanel({
                       second: "2-digit",
                     })}
                   </td>
-                  <td className="break-words px-3 py-2 text-zinc-700 dark:text-zinc-300">{o.estado_impresion}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-zinc-700 dark:text-zinc-300">{o.estado_impresion}</td>
                 </tr>
               ))
             )}
