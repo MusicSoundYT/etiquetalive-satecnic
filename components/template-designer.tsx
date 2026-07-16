@@ -84,6 +84,8 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
   const [previewHtml, setPreviewHtml] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [testPrinting, setTestPrinting] = useState(false);
+  const [testPrintError, setTestPrintError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Sin plantilla seleccionada (tras "Nueva plantilla" o al borrar la última):
@@ -229,6 +231,51 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
     }
   }
 
+  // Imprime de verdad (no solo la vista previa en pantalla) con datos de
+  // ejemplo inventados —nunca de la base de datos— para comprobar que la
+  // impresora funciona bien con la configuración actual, sin cobrar nada:
+  // el servidor la genera en modo preview (QR no válido).
+  function printTestLabel(html: string) {
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    iframe.setAttribute("aria-hidden", "true");
+
+    const cleanup = () => iframe.remove();
+    iframe.onload = () => {
+      iframe.contentWindow?.addEventListener("afterprint", cleanup);
+      iframe.contentWindow?.print();
+      // Red de seguridad por si el navegador no dispara "afterprint".
+      setTimeout(cleanup, 60_000);
+    };
+    iframe.srcdoc = html;
+    document.body.appendChild(iframe);
+  }
+
+  async function handleTestPrint() {
+    setTestPrintError(null);
+    setTestPrinting(true);
+    try {
+      const res = await fetch("/api/templates/test-print", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fields }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setTestPrintError(data?.error ?? "No se pudo generar la etiqueta de prueba.");
+        return;
+      }
+      printTestLabel(await res.text());
+    } finally {
+      setTestPrinting(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-8 lg:flex-row">
       <div className="min-w-0 flex-1 space-y-6">
@@ -361,6 +408,18 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
             className="border border-zinc-300 bg-white shadow-sm dark:border-zinc-700"
           />
         </div>
+        <button
+          onClick={handleTestPrint}
+          disabled={testPrinting}
+          className="mt-3 w-full rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        >
+          {testPrinting ? "Generando..." : "Imprimir etiqueta de prueba"}
+        </button>
+        <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+          Con datos inventados (no de la base de datos), para comprobar que la impresora
+          funciona bien. No consume saldo.
+        </p>
+        <ErrorText message={testPrintError} />
       </div>
     </div>
   );
