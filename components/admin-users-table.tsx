@@ -33,6 +33,13 @@ export function AdminUsersTable({
   const [editForm, setEditForm] = useState({ name: "", lastName: "", email: "" });
   const [editError, setEditError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [balanceAmount, setBalanceAmount] = useState("");
+  const [balanceReason, setBalanceReason] = useState("");
+  const [balanceError, setBalanceError] = useState<string | null>(null);
+  const [showNewClient, setShowNewClient] = useState(false);
+  const [newClient, setNewClient] = useState({ businessName: "", email: "", name: "", lastName: "" });
+  const [newClientError, setNewClientError] = useState<string | null>(null);
+  const [newClientSaving, setNewClientSaving] = useState(false);
 
   function loadUsers() {
     return fetch("/api/admin/users")
@@ -121,6 +128,61 @@ export function AdminUsersTable({
     setEditingId(u.id);
     setEditError(null);
     setEditForm({ name: u.name ?? "", lastName: u.last_name ?? "", email: u.email });
+    setBalanceAmount("");
+    setBalanceReason("");
+    setBalanceError(null);
+  }
+
+  async function addBalance(userId: string) {
+    const amount = Number(balanceAmount.replace(",", "."));
+    if (!amount) {
+      setBalanceError("Introduce un importe distinto de 0.");
+      return;
+    }
+    setBalanceError(null);
+    setSavingId(userId);
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/balance`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amountCents: Math.round(amount * 100), reason: balanceReason || undefined }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setBalanceError(data?.error ?? "No se pudo ajustar el saldo.");
+        return;
+      }
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, balance: { ...u.balance!, balance_cents: data.balance_cents } } : u))
+      );
+      setBalanceAmount("");
+      setBalanceReason("");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function createClient(e: React.FormEvent) {
+    e.preventDefault();
+    setNewClientError(null);
+    setNewClientSaving(true);
+    try {
+      const res = await fetch("/api/admin/tenants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newClient),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setNewClientError(data?.error ?? "No se pudo crear el cliente.");
+        return;
+      }
+      await loadUsers();
+      setShowNewClient(false);
+      setNewClient({ businessName: "", email: "", name: "", lastName: "" });
+    } finally {
+      setNewClientSaving(false);
+    }
   }
 
   async function saveEdit(userId: string) {
@@ -152,6 +214,69 @@ export function AdminUsersTable({
 
   return (
     <div>
+      <div className="mb-4">
+        <button
+          onClick={() => setShowNewClient((v) => !v)}
+          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        >
+          {showNewClient ? "Cancelar" : "+ Nuevo cliente"}
+        </button>
+        {showNewClient && (
+          <form
+            onSubmit={createClient}
+            className="mt-3 flex flex-wrap items-end gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-950"
+          >
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500 dark:text-zinc-400">Nombre del negocio</label>
+              <input
+                required
+                value={newClient.businessName}
+                onChange={(e) => setNewClient({ ...newClient, businessName: e.target.value })}
+                className={smallInputClass}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500 dark:text-zinc-400">Email</label>
+              <input
+                required
+                type="email"
+                value={newClient.email}
+                onChange={(e) => setNewClient({ ...newClient, email: e.target.value })}
+                className={smallInputClass}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500 dark:text-zinc-400">Nombre</label>
+              <input
+                required
+                value={newClient.name}
+                onChange={(e) => setNewClient({ ...newClient, name: e.target.value })}
+                className={smallInputClass}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500 dark:text-zinc-400">Apellidos</label>
+              <input
+                value={newClient.lastName}
+                onChange={(e) => setNewClient({ ...newClient, lastName: e.target.value })}
+                className={smallInputClass}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={newClientSaving}
+              className="rounded bg-zinc-900 px-3 py-1.5 text-xs text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            >
+              {newClientSaving ? "Creando..." : "Crear cliente"}
+            </button>
+            <p className="w-full text-xs text-zinc-500 dark:text-zinc-400">
+              Se le enviará un correo para que elija su propia contraseña — no hace falta indicarla aquí.
+            </p>
+            {newClientError && <p className="text-xs text-red-600 dark:text-red-400">{newClientError}</p>}
+          </form>
+        )}
+      </div>
+
       {actionError && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{actionError}</p>}
       <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
       <table className="w-full min-w-[900px] text-sm">
@@ -317,6 +442,37 @@ export function AdminUsersTable({
                         Cancelar
                       </button>
                       {editError && <span className="text-xs text-red-600 dark:text-red-400">{editError}</span>}
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-end gap-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+                      <div>
+                        <label className="mb-1 block text-xs text-zinc-500 dark:text-zinc-400">
+                          Añadir saldo (€, usa negativo para restar)
+                        </label>
+                        <input
+                          value={balanceAmount}
+                          onChange={(e) => setBalanceAmount(e.target.value)}
+                          placeholder="10"
+                          className={`${smallInputClass} w-24`}
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs text-zinc-500 dark:text-zinc-400">Motivo (opcional)</label>
+                        <input
+                          value={balanceReason}
+                          onChange={(e) => setBalanceReason(e.target.value)}
+                          placeholder="Corrección de un cobro erróneo"
+                          className={`${smallInputClass} w-56`}
+                        />
+                      </div>
+                      <button
+                        onClick={() => addBalance(u.id)}
+                        disabled={savingId === u.id}
+                        className="rounded bg-zinc-900 px-3 py-1 text-xs text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                      >
+                        Aplicar
+                      </button>
+                      {balanceError && <span className="text-xs text-red-600 dark:text-red-400">{balanceError}</span>}
                     </div>
                   </td>
                 </tr>
