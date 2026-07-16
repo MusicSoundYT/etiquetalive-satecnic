@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from "react";
 
-type Summary = { year: number; month: number; ordersCount: number; tenantsCount: number; totalCents: number };
+type Summary = {
+  year: number;
+  month: number;
+  ordersCount: number;
+  tenantsCount: number;
+  totalCents: number;
+  rechargedCents: number;
+};
 
 const MONTH_NAMES = [
   "enero", "febrero", "marzo", "abril", "mayo", "junio",
@@ -79,11 +86,23 @@ export function AdminMonthlyBilling() {
         )}
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded border border-zinc-200 px-3 py-2 dark:border-zinc-800">
-          <div className="text-[10px] uppercase text-zinc-400 dark:text-zinc-500">Facturado</div>
+          <div className="text-[10px] uppercase text-zinc-400 dark:text-zinc-500">Saldo recargado</div>
+          <div className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+            {loading || !summary ? "…" : `${(summary.rechargedCents / 100).toFixed(2)}€`}
+          </div>
+          <div className="mt-0.5 text-[10px] text-zinc-400 dark:text-zinc-500">
+            Dinero real cobrado por Stripe este mes
+          </div>
+        </div>
+        <div className="rounded border border-zinc-200 px-3 py-2 dark:border-zinc-800">
+          <div className="text-[10px] uppercase text-zinc-400 dark:text-zinc-500">Facturado por etiquetas</div>
           <div className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
             {loading || !summary ? "…" : `${(summary.totalCents / 100).toFixed(2)}€`}
+          </div>
+          <div className="mt-0.5 text-[10px] text-zinc-400 dark:text-zinc-500">
+            Según las etiquetas cobradas este mes
           </div>
         </div>
         <div className="rounded border border-zinc-200 px-3 py-2 dark:border-zinc-800">

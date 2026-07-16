@@ -27,17 +27,32 @@ export async function GET(req: NextRequest) {
 
   const { start, end } = monthRange(year, month);
 
-  const rows = await fetchAllRows<{ price_cents: number; tenant_id: string }>((from, to) =>
-    supabaseAdmin
-      .from("orders_processed")
-      .select("price_cents, tenant_id")
-      .gte("processed_at", start)
-      .lt("processed_at", end)
-      .range(from, to)
-  );
+  const [rows, rechargeRows] = await Promise.all([
+    fetchAllRows<{ price_cents: number; tenant_id: string }>((from, to) =>
+      supabaseAdmin
+        .from("orders_processed")
+        .select("price_cents, tenant_id")
+        .gte("processed_at", start)
+        .lt("processed_at", end)
+        .range(from, to)
+    ),
+    // Dinero real cobrado por Stripe ese mes (recargas de saldo) — no tiene
+    // por qué coincidir con lo facturado por etiquetas del mismo mes: un
+    // cliente puede recargar en julio y consumir esas etiquetas en agosto.
+    fetchAllRows<{ amount_cents: number }>((from, to) =>
+      supabaseAdmin
+        .from("balance_transactions")
+        .select("amount_cents")
+        .eq("type", "recharge")
+        .gte("created_at", start)
+        .lt("created_at", end)
+        .range(from, to)
+    ),
+  ]);
 
   const totalCents = rows.reduce((sum, r) => sum + r.price_cents, 0);
   const tenantsCount = new Set(rows.map((r) => r.tenant_id)).size;
+  const rechargedCents = rechargeRows.reduce((sum, r) => sum + r.amount_cents, 0);
 
   return NextResponse.json({
     year,
@@ -45,5 +60,6 @@ export async function GET(req: NextRequest) {
     ordersCount: rows.length,
     tenantsCount,
     totalCents,
+    rechargedCents,
   });
 }
