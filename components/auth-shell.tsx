@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 export function AuthShell({
   title,
   subtitle,
@@ -10,6 +12,9 @@ export function AuthShell({
   return (
     <div className="flex flex-1 items-center justify-center bg-zinc-50 px-4 py-12 dark:bg-zinc-950">
       <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="mb-6 flex justify-center">
+          <Image src="/logo-woowtienda.png" alt="Woow Insólito" width={60} height={64} priority />
+        </div>
         <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">{title}</h1>
         {subtitle && (
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{subtitle}</p>
