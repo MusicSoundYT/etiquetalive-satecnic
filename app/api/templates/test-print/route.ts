@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth/session";
 import { templateFieldsSchema } from "@/lib/labels/schema";
 import { generateLabelHtml } from "@/lib/labels/render";
+import { buildTestSampleOrder } from "@/lib/labels/test-sample-order";
 import type { LabelTemplate } from "@/lib/labels/types";
 
 const bodySchema = z.object({ fields: templateFieldsSchema });
@@ -21,16 +22,6 @@ export async function POST(req: NextRequest) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Datos inválidos." }, { status: 400 });
 
-  const testOrder = {
-    tk: "PRUEBA",
-    external_order_id: "000000000000",
-    cliente: "WooW Insolito",
-    precio_cents: 999,
-    moneda: "EUR",
-    fecha_pedido: new Date().toISOString(),
-    raw_payload: { tiktok_name: "WoowInsolito" },
-  };
-
   const template: LabelTemplate = {
     id: "test-print",
     tenant_id: "test-print",
@@ -39,6 +30,6 @@ export async function POST(req: NextRequest) {
     ...parsed.data.fields,
   };
 
-  const html = await generateLabelHtml(testOrder, template, { preview: true });
+  const html = await generateLabelHtml(buildTestSampleOrder(), template, { preview: true });
   return new NextResponse(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 }

@@ -3,17 +3,8 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth/session";
 import { templateFieldsSchema } from "@/lib/labels/schema";
 import { generateLabelHtml } from "@/lib/labels/render";
+import { buildTestSampleOrder } from "@/lib/labels/test-sample-order";
 import type { LabelTemplate } from "@/lib/labels/types";
-
-const SAMPLE_ORDER = {
-  tk: "TK-00001",
-  external_order_id: "987654321012",
-  cliente: "María López",
-  precio_cents: 400,
-  moneda: "EUR",
-  fecha_pedido: new Date().toISOString(),
-  raw_payload: { tiktok_name: "silvy_883" },
-};
 
 // Todos los campos de la plantilla que son una medida física (mm o pt), tal
 // como se ven en components/template-designer.tsx.
@@ -71,6 +62,6 @@ export async function POST(req: NextRequest) {
     ...scaledFields,
   };
 
-  const html = await generateLabelHtml(SAMPLE_ORDER, fakeTemplate);
+  const html = await generateLabelHtml(buildTestSampleOrder(), fakeTemplate);
   return new NextResponse(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 }
