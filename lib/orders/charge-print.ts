@@ -2,6 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { adjustBalance, getPriceCentsForTier, getUserBalance } from "@/lib/wallet/ledger";
 import { maybeAutoRecharge } from "@/lib/wallet/auto-recharge";
+import { maybeAutoUpgradeTier } from "@/lib/wallet/tier-upgrade";
 import { sendLowBalanceEmail } from "@/lib/mail/send-low-balance-email";
 
 // Margen de gracia: se permite que el saldo llegue hasta -2€ antes de
@@ -135,6 +136,7 @@ export async function claimAndChargePrint(
   });
 
   await maybeAutoRecharge(owner.id);
+  await maybeAutoUpgradeTier(tenantId, owner.id, balance?.current_tier ?? 1);
 
   return { status: "charged", order: claimed as OrderRow, priceCents };
 }
