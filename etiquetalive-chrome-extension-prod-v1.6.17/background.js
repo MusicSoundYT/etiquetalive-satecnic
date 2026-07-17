@@ -1,4 +1,4 @@
-const VERSION = "el-1.6.16-auction";
+const VERSION = "el-1.6.17-auction";
 const API_BASE = "https://etiquetalivetiktok.satecnic.es";
 const DEFAULT_CONFIG = {
   configVersion: "local-default-1",

@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.16";
+  const VERSION = "el-1.6.17";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const DEFAULT_CONFIG = {
     apiBase: API_BASE,
@@ -422,6 +422,34 @@
     } catch (_) {}
   }
 
+  // Al quitar/actualizar la extensi\u00f3n, las pesta\u00f1as que ya estaban abiertas se
+  // quedan con este content script "zombi": sigue corriendo en la p\u00e1gina,
+  // pero pierde la conexi\u00f3n con la extensi\u00f3n (chrome.runtime.id deja de
+  // existir) y ya no puede avisar de nada \u2014 hasta ahora eso fallaba en
+  // silencio y solo se arreglaba recargando la p\u00e1gina (F5) a ciegas. Con este
+  // aviso, se detecta solo y se le dice al usuario qu\u00e9 hacer.
+  let extensionContextBannerShown = false;
+  function isExtensionContextValid() {
+    try { return Boolean(chrome && chrome.runtime && chrome.runtime.id); } catch (_) { return false; }
+  }
+  function checkExtensionContext() {
+    if (isExtensionContextValid() || extensionContextBannerShown) return;
+    extensionContextBannerShown = true;
+    try {
+      const el = document.createElement("div");
+      el.style.cssText = "position:fixed;top:12px;right:12px;z-index:2147483647;background:#7f1d1d;color:#fff;padding:10px 14px;border-radius:8px;font:600 13px/1.4 sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);max-width:360px;display:flex;align-items:center;gap:10px;";
+      const text = document.createElement("span");
+      text.textContent = "\u26a0\ufe0f La extensi\u00f3n EtiquetaLive se ha actualizado. Recarga esta p\u00e1gina para seguir detectando pedidos.";
+      const btn = document.createElement("button");
+      btn.textContent = "Recargar";
+      btn.style.cssText = "background:#fff;color:#7f1d1d;border:0;border-radius:6px;padding:6px 10px;font:700 12px sans-serif;cursor:pointer;flex-shrink:0;";
+      btn.onclick = () => location.reload();
+      el.appendChild(text);
+      el.appendChild(btn);
+      document.body.appendChild(el);
+    } catch (_) {}
+  }
+
   function norm(s) {
     return String(s || "")
       .replace(/\u00a0/g, " ")
@@ -690,6 +718,7 @@
     setTimeout(() => scan("initial_1500"), 1500);
     setInterval(() => scan("tick"), Number(cfg("domScanIntervalMs")) || 5000);
     setInterval(() => sendRuntimeMessage({ type: "EL_FORCE_BACKGROUND_POLL" }), Number(cfg("forceBackgroundPollIntervalMs")) || 60000);
+    setInterval(checkExtensionContext, 20000);
     // La página de Seller Orders ya NO se recarga periódicamente por tiempo:
     // solo se recarga cuando el crono de la subasta llega a 00:00 y se
     // detecta el ganador (ver refreshSellerAfterAuctionWinner / scheduleSellerRefresh).

@@ -14,7 +14,9 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Material de referencia del cliente (no forma parte de esta app Next.js):
     "etiquetalive-legacy-server-current/**",
-    "etiquetalive-chrome-extension-prod-v1.6.16/**",
+    // Patrón con comodín (no la versión exacta) para no tener que actualizar
+    // este archivo cada vez que se sube de versión la carpeta de la extensión.
+    "etiquetalive-chrome-extension-*/**",
   ]),
 ]);
 
