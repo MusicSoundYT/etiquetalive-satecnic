@@ -9,6 +9,7 @@ export type MonthlyBillingSummary = {
   tenantsCount: number;
   totalCents: number;
   rechargedCents: number;
+  pendingDebtCents: number;
 };
 
 /** Primer y último día (ISO) del mes indicado, en base al huso horario del servidor. */
@@ -27,7 +28,7 @@ function monthRange(year: number, month: number): { start: string; end: string }
 export async function getMonthlyBillingSummary(year: number, month: number): Promise<MonthlyBillingSummary> {
   const { start, end } = monthRange(year, month);
 
-  const [rows, rechargeRows] = await Promise.all([
+  const [rows, rechargeRows, debtRows] = await Promise.all([
     fetchAllRows<{ price_cents: number; tenant_id: string }>((from, to) =>
       supabaseAdmin
         .from("orders_processed")
@@ -49,13 +50,27 @@ export async function getMonthlyBillingSummary(year: number, month: number): Pro
         .lt("created_at", end)
         .range(from, to)
     ),
+    // Deuda viva AHORA MISMO (no es una cifra "del mes"): "Facturado por
+    // etiquetas" ya incluye el consumo de clientes en negativo (hasta el
+    // margen de -2€, ver NEGATIVE_BALANCE_FLOOR_CENTS en charge-print.ts) —
+    // esa parte está facturada pero todavía no cobrada, así que se muestra
+    // aparte para no dar la impresión de que todo lo "facturado" ya se pagó.
+    fetchAllRows<{ balance_cents: number }>((from, to) =>
+      supabaseAdmin
+        .from("user_balances")
+        .select("balance_cents")
+        .lt("balance_cents", 0)
+        .eq("is_demo", false)
+        .range(from, to)
+    ),
   ]);
 
   const totalCents = rows.reduce((sum, r) => sum + r.price_cents, 0);
   const tenantsCount = new Set(rows.map((r) => r.tenant_id)).size;
   const rechargedCents = rechargeRows.reduce((sum, r) => sum + r.amount_cents, 0);
+  const pendingDebtCents = -debtRows.reduce((sum, r) => sum + r.balance_cents, 0);
 
-  return { year, month, ordersCount: rows.length, tenantsCount, totalCents, rechargedCents };
+  return { year, month, ordersCount: rows.length, tenantsCount, totalCents, rechargedCents, pendingDebtCents };
 }
 
 /** Lista de {year, month} desde "desde" hasta "hasta" (ambos incluidos), en orden cronológico. */

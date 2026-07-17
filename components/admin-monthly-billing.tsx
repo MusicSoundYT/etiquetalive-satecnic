@@ -9,6 +9,7 @@ type Summary = {
   tenantsCount: number;
   totalCents: number;
   rechargedCents: number;
+  pendingDebtCents: number;
 };
 
 const MONTH_NAMES = [
@@ -89,7 +90,7 @@ export function AdminMonthlyBilling() {
         )}
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <div className="rounded border border-zinc-200 px-3 py-2 dark:border-zinc-800">
           <div className="text-[10px] uppercase text-zinc-400 dark:text-zinc-500">Saldo recargado</div>
           <div className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
@@ -106,6 +107,16 @@ export function AdminMonthlyBilling() {
           </div>
           <div className="mt-0.5 text-[10px] text-zinc-400 dark:text-zinc-500">
             Según las etiquetas cobradas este mes
+          </div>
+        </div>
+        <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/30">
+          <div className="text-[10px] uppercase text-amber-700 dark:text-amber-400">Pendiente de cobro</div>
+          <div className="text-lg font-semibold text-amber-900 dark:text-amber-300">
+            {loading || !summary ? "…" : `${(summary.pendingDebtCents / 100).toFixed(2)}€`}
+          </div>
+          <div className="mt-0.5 text-[10px] text-amber-700/80 dark:text-amber-400/80">
+            Saldo negativo actual de clientes (hasta -2€ cada uno) — ya facturado, aún no cobrado.
+            No es una cifra del mes, es a día de hoy.
           </div>
         </div>
         <div className="rounded border border-zinc-200 px-3 py-2 dark:border-zinc-800">
