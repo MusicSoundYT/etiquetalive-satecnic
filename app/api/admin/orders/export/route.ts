@@ -17,6 +17,9 @@ export async function GET(req: NextRequest) {
     dir: sp.get("dir") === "asc" ? "asc" : "desc",
   });
 
+  // "Comprador" ya viene enmascarado desde getAdminOrdersForExport (primera
+  // letra + asteriscos) y no se incluye el precio: privacidad de los
+  // compradores de tus clientes, ver política de privacidad.
   const csv = toCsv(
     orders.map((o) => ({ ...o, cliente_negocio: o.tenants?.business_name ?? "" })),
     [
@@ -24,8 +27,6 @@ export async function GET(req: NextRequest) {
       { key: "tk", label: "TK" },
       { key: "external_order_id", label: "ID pedido TikTok" },
       { key: "cliente", label: "Comprador" },
-      { key: "precio_cents", label: "Precio (céntimos)" },
-      { key: "moneda", label: "Moneda" },
       { key: "fecha_detectado", label: "Fecha detectado" },
       { key: "estado_impresion", label: "Estado" },
       { key: "reimpresiones", label: "Reimpresiones" },

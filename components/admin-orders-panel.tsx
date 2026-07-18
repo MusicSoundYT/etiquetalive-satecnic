@@ -5,9 +5,10 @@ import { useEffect, useState } from "react";
 type AdminOrder = {
   id: string;
   tk: string;
+  // Enmascarado en el servidor (primera letra + asteriscos) — nunca llega el
+  // nombre real del comprador al navegador del admin. Tampoco se pide el
+  // precio: no es necesario para administrar la plataforma.
   cliente: string | null;
-  precio_cents: number;
-  moneda: string;
   fecha_detectado: string;
   estado_impresion: string;
   reimpresiones: number;
@@ -105,7 +106,6 @@ export function AdminOrdersPanel({
             <tr>
               <th className="px-3 py-2">TK</th>
               <th className="px-3 py-2">Comprador</th>
-              <th className="px-3 py-2">Precio</th>
               <th className="px-3 py-2">Fecha</th>
               <th className="px-3 py-2">Estado</th>
             </tr>
@@ -113,13 +113,13 @@ export function AdminOrdersPanel({
           <tbody className="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-900">
             {loading ? (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-zinc-400">
+                <td colSpan={4} className="px-3 py-6 text-center text-zinc-400">
                   Cargando…
                 </td>
               </tr>
             ) : orders.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-zinc-400">
+                <td colSpan={4} className="px-3 py-6 text-center text-zinc-400">
                   No hay pedidos con estos filtros.
                 </td>
               </tr>
@@ -128,10 +128,6 @@ export function AdminOrdersPanel({
                 <tr key={o.id}>
                   <td className="whitespace-nowrap px-3 py-2 text-zinc-700 dark:text-zinc-300">{o.tk}</td>
                   <td className="break-words px-3 py-2 text-zinc-700 dark:text-zinc-300">{o.cliente ?? "—"}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-zinc-700 dark:text-zinc-300">
-                    {(o.precio_cents / 100).toFixed(2)}
-                    {o.moneda === "EUR" ? "€" : o.moneda}
-                  </td>
                   <td className="whitespace-nowrap px-3 py-2 text-zinc-700 dark:text-zinc-300">
                     {new Date(o.fecha_detectado).toLocaleString("es-ES", {
                       day: "2-digit",

@@ -32,6 +32,14 @@ export default function PrivacidadPage() {
         introduces en la plataforma y eres responsable de contar con base legítima para tratarlos e
         informar a tus propios clientes según corresponda.
       </p>
+      <p>
+        Esos datos de tus compradores se almacenan para que tú puedas consultarlos desde tu propia
+        cuenta, pero <strong>nuestro personal no tiene acceso a ellos en claro</strong>: el panel de
+        administración interno que usamos para dar soporte y gestionar la plataforma no muestra el
+        nombre completo del comprador (solo la inicial) ni el importe exacto del pedido — esa
+        información nunca llega a transmitirse a quien administra la plataforma, ni siquiera
+        inspeccionando manualmente la aplicación.
+      </p>
 
       <h2>Datos que tratamos</h2>
       <ul>

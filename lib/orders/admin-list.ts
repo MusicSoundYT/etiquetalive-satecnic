@@ -1,9 +1,19 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { resolveSortColumn, type OrdersFilter } from "@/lib/orders/list";
+import { maskBuyerName } from "@/lib/orders/mask-buyer-name";
 
 export const ADMIN_ORDERS_PAGE_SIZE = 25;
 const EXPORT_LIMIT = 5000;
+
+// Solo se seleccionan las columnas necesarias — en particular, nunca se pide
+// precio_cents/moneda a la base de datos para el listado de admin (privacidad
+// de los compradores de tus clientes: el precio de un pedido concreto no
+// aporta nada a la administración de la plataforma y no debe ni transitar
+// por el servidor). El filtro `q` sí puede buscar por `cliente` en la
+// consulta SQL (dato real, del lado del servidor) aunque el nombre que
+// vuelve al navegador ya esté enmascarado.
+const ADMIN_ORDER_COLUMNS = "id, tk, external_order_id, cliente, fecha_detectado, estado_impresion, reimpresiones, impresiones_cobrables, tenant_id, tenants(business_name)";
 
 export type AdminOrdersFilter = OrdersFilter & { tenantId?: string };
 
@@ -28,8 +38,6 @@ export type AdminOrderRow = {
   tk: string;
   external_order_id: string | null;
   cliente: string | null;
-  precio_cents: number;
-  moneda: string;
   fecha_detectado: string;
   estado_impresion: string;
   reimpresiones: number;
@@ -38,11 +46,16 @@ export type AdminOrderRow = {
   tenants: { business_name: string } | null;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function maskRow(row: any): AdminOrderRow {
+  return { ...row, cliente: maskBuyerName(row.cliente) };
+}
+
 export async function getAdminOrdersPage(
   page: number,
   filter: AdminOrdersFilter = {},
   pageSize = ADMIN_ORDERS_PAGE_SIZE
-) {
+): Promise<{ orders: AdminOrderRow[]; total: number }> {
   const countQuery = applyAdminOrdersFilter(
     supabaseAdmin.from("orders").select("id", { count: "exact", head: true }),
     filter
@@ -59,7 +72,7 @@ export async function getAdminOrdersPage(
   const to = from + pageSize - 1;
 
   const dataQuery = applyAdminOrdersFilter(
-    supabaseAdmin.from("orders").select("*, tenants(business_name)"),
+    supabaseAdmin.from("orders").select(ADMIN_ORDER_COLUMNS),
     filter
   )
     .order(resolveSortColumn(filter.sort), { ascending: filter.dir === "asc" })
@@ -68,12 +81,12 @@ export async function getAdminOrdersPage(
   const { data, error } = await dataQuery;
   if (error) throw new Error(`No se pudieron cargar los pedidos: ${error.message}`);
 
-  return { orders: (data ?? []) as unknown as AdminOrderRow[], total };
+  return { orders: (data ?? []).map(maskRow), total };
 }
 
-export async function getAdminOrdersForExport(filter: AdminOrdersFilter = {}) {
+export async function getAdminOrdersForExport(filter: AdminOrdersFilter = {}): Promise<AdminOrderRow[]> {
   const query = applyAdminOrdersFilter(
-    supabaseAdmin.from("orders").select("*, tenants(business_name)"),
+    supabaseAdmin.from("orders").select(ADMIN_ORDER_COLUMNS),
     filter
   )
     .order(resolveSortColumn(filter.sort), { ascending: filter.dir === "asc" })
@@ -81,5 +94,5 @@ export async function getAdminOrdersForExport(filter: AdminOrdersFilter = {}) {
 
   const { data, error } = await query;
   if (error) throw new Error(`No se pudieron exportar los pedidos: ${error.message}`);
-  return (data ?? []) as unknown as AdminOrderRow[];
+  return (data ?? []).map(maskRow);
 }
