@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { randomBytes, createHash } from "crypto";
 import { cookies } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -49,7 +50,15 @@ export async function createSession(
   return token;
 }
 
-export async function getSessionUser(): Promise<SessionUser | null> {
+// Envuelto en React cache(): tanto el layout protegido como cada página
+// (dashboard, account, admin...) llaman a getSessionUser() por su cuenta, y
+// sin este cache() eso significaba repetir las 2 consultas a Supabase
+// (auth_sessions + users) en cada una — el doble de ida y vuelta de red por
+// cada navegación, notándose como lentitud aunque el servidor esté ligero
+// (es tiempo de espera de red, no de CPU). cache() memoiza por petición: la
+// segunda llamada dentro del mismo render reutiliza el resultado sin volver
+// a golpear la base de datos.
+export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;
   if (!token) return null;
@@ -77,7 +86,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     .maybeSingle();
 
   return user as SessionUser | null;
-}
+});
 
 /** Revoca TODAS las sesiones activas de un usuario (cierre de sesión en todos los dispositivos). */
 export async function revokeAllSessionsForUser(userId: string): Promise<void> {
