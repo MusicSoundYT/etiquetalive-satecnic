@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.21-auction";
+  const VERSION = "el-1.6.22-auction";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const SCAN_INTERVAL_MS = 2500;
   const MUTATION_DEBOUNCE_MS = 1000;
@@ -232,6 +232,7 @@
   function scanDom(reason = "tick") {
     if (!/shop\.tiktok\.com\/streamer\/live/i.test(location.href)) return;
     try { checkFinishedBanner(); } catch (_) {}
+    try { checkWinnerLabel(); } catch (_) {}
     if (scanning) return;
     scanning = true;
     try {
@@ -308,6 +309,47 @@
       notifyAuctionEndedDirect("finished_banner_direct");
       try { scanDom("finished_banner"); } catch (_) {}
     }, reconcileDelayMs);
+  }
+
+  // Señal más fiable que las dos de arriba: la tarjeta de la subasta siempre
+  // tiene un bloque fijo "Ganador de esta ronda: --" (visto en producción),
+  // que TikTok rellena con el nombre real en cuanto termina la ronda. A
+  // diferencia del crono o de un cartel de texto libre, esta etiqueta no
+  // desaparece nunca — solo cambia su valor — así que no depende de pillar
+  // el instante exacto en que aparece/desaparece un elemento.
+  let lastWinnerLabelValue = "";
+  function checkWinnerLabel() {
+    if (!/shop\.tiktok\.com\/streamer\/live/i.test(location.href)) return;
+    try {
+      const divs = document.querySelectorAll("div");
+      for (const el of divs) {
+        const txt = norm(el.textContent || "");
+        if (txt.length > 80) continue; // descarta contenedores grandes que engloban más cosas
+        const m = txt.match(/^Ganador de esta ronda\s*:\s*(.+)$/i) || txt.match(/^Winner of this round\s*:\s*(.+)$/i);
+        if (!m) continue;
+        const value = norm(m[1] || "");
+        if (!value || value === "--" || value === "-" || /^-+$/.test(value)) {
+          lastWinnerLabelValue = "";
+          return;
+        }
+        if (value === lastWinnerLabelValue) return; // ya procesado este ganador
+        lastWinnerLabelValue = value;
+        notifyAuctionEndedDirect("winner_label_direct");
+        emitAuctionEvent({
+          source: "winner_label_dom",
+          winner: value.slice(0, 80),
+          productName: "",
+          price: "",
+          auctionId: "",
+          raw: txt.slice(0, 500),
+          pageUrl: location.href,
+          title: document.title,
+          detectedAt: new Date().toISOString(),
+          meta: { reason: "winner_label_dom" }
+        });
+        return;
+      }
+    } catch (_) {}
   }
 
   class AuctionCronoWatcher {
