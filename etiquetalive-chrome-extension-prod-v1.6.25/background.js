@@ -1,4 +1,4 @@
-const VERSION = "el-1.6.24-auction";
+const VERSION = "el-1.6.25-auction";
 const API_BASE = "https://etiquetalivetiktok.satecnic.es";
 const DEFAULT_CONFIG = {
   configVersion: "local-default-1",
@@ -104,6 +104,18 @@ function rememberAuctionRequest(req) {
   });
 }
 
+// Cuando la pestaña de Seller está en segundo plano, Chrome puede congelar
+// su JavaScript (temporizadores incluidos) para ahorrar recursos — así que
+// pedirle a esa pestaña que se recargue sola con location.reload() no
+// funciona de forma fiable: el mensaje llega, pero la propia pestaña no
+// llega a ejecutar nada hasta que el usuario la enfoca (confirmado en
+// producción: la recarga solo ocurría al hacer clic en la pestaña).
+// chrome.tabs.reload() no tiene ese problema: actúa desde el background
+// (que sí está despierto en ese momento) directamente sobre la pestaña,
+// sin depender de que su JS esté activo.
+let lastSellerReloadAt = 0;
+const SELLER_RELOAD_COOLDOWN_MS = 45000;
+
 function notifySellerOrderTabs(event) {
   try {
     chrome.tabs.query({ url: "https://seller-es.tiktok.com/order*" }, (tabs) => {
@@ -115,6 +127,26 @@ function notifySellerOrderTabs(event) {
             console.log("[EtiquetaLive] background: error enviando a tab", tab.id, chrome.runtime.lastError.message);
           } else {
             console.log("[EtiquetaLive] background: mensaje entregado a tab", tab.id);
+          }
+        });
+      }
+
+      const now = Date.now();
+      if (now - lastSellerReloadAt < SELLER_RELOAD_COOLDOWN_MS) {
+        console.log("[EtiquetaLive] background: recarga forzada de Seller en cooldown, se omite", {
+          msRestantes: SELLER_RELOAD_COOLDOWN_MS - (now - lastSellerReloadAt),
+        });
+        return;
+      }
+      if (!tabs || !tabs.length) return;
+      lastSellerReloadAt = now;
+      for (const tab of tabs) {
+        if (!tab?.id) continue;
+        chrome.tabs.reload(tab.id, {}, () => {
+          if (chrome.runtime.lastError) {
+            console.log("[EtiquetaLive] background: error recargando tab", tab.id, chrome.runtime.lastError.message);
+          } else {
+            console.log("[EtiquetaLive] background: recarga forzada de tab", tab.id);
           }
         });
       }
