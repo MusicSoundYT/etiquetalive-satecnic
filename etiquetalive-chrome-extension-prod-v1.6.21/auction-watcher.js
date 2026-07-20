@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.20-auction";
+  const VERSION = "el-1.6.21-auction";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const SCAN_INTERVAL_MS = 2500;
   const MUTATION_DEBOUNCE_MS = 1000;
@@ -231,6 +231,7 @@
 
   function scanDom(reason = "tick") {
     if (!/shop\.tiktok\.com\/streamer\/live/i.test(location.href)) return;
+    try { checkFinishedBanner(); } catch (_) {}
     if (scanning) return;
     scanning = true;
     try {
@@ -263,6 +264,51 @@
   // ═══════════════════════════════════════════════════════════
   const reconcileDelayMs = 6000;
   const CRONO_TRIGGER_KEYWORDS = ["Finaliza dentro de", "Ends in", "结束于", "Termina en"];
+
+  // Aviso directo, compartido entre el crono llegando a 00:00 y la detección
+  // del cartel "Subasta finalizada" (ver más abajo) — ambos son señales
+  // independientes de que la ronda ha terminado, con su propio anti-rebote
+  // compartido para no avisar dos veces por la misma ronda.
+  let lastAuctionEndSignalAt = 0;
+  function notifyAuctionEndedDirect(reason) {
+    const now = Date.now();
+    if (now - lastAuctionEndSignalAt < 8000) return;
+    lastAuctionEndSignalAt = now;
+    try {
+      sendRuntimeMessage({
+        type: "EL_AUCTION_WINNER_DETECTED",
+        event: {
+          source: reason,
+          winner: "", productName: "", price: "", auctionId: "",
+          raw: reason + "_" + now,
+          pageUrl: location.href,
+          title: document.title,
+          detectedAt: new Date().toISOString(),
+          meta: { reason }
+        }
+      });
+    } catch (_) {}
+  }
+
+  // Al terminar la ronda, TikTok a veces no llega a mostrar nunca el texto
+  // literal "00:00" del cronómetro — sustituye directamente el cronómetro por
+  // un cartel de "Subasta finalizada" (visto en producción), saltándose el
+  // estado que vigila el crono. Se vigila también ese cartel como señal
+  // alternativa e independiente de fin de ronda.
+  const FINISHED_BANNER_KEYWORDS = ["subasta finalizada", "auction ended", "auction finished", "auction has ended"];
+  let lastFinishedBannerSeenAt = 0;
+  function checkFinishedBanner() {
+    if (!/shop\.tiktok\.com\/streamer\/live/i.test(location.href)) return;
+    const now = Date.now();
+    if (now - lastFinishedBannerSeenAt < 20000) return; // ya visto hace poco, no repetir por la misma ronda
+    const text = norm(document.body?.innerText || "").toLowerCase();
+    if (!FINISHED_BANNER_KEYWORDS.some((kw) => text.includes(kw))) return;
+    lastFinishedBannerSeenAt = now;
+    setTimeout(() => {
+      notifyAuctionEndedDirect("finished_banner_direct");
+      try { scanDom("finished_banner"); } catch (_) {}
+    }, reconcileDelayMs);
+  }
 
   class AuctionCronoWatcher {
     constructor() {
@@ -342,24 +388,8 @@
         // Aviso directo a Seller SIEMPRE que el crono llega a 00:00, sin
         // esperar a haber podido leer el texto del ganador en esta página
         // (ese parseo es frágil y depende de cómo TikTok lo muestre en cada
-        // momento). El crono llegando a cero es la señal fiable de que la
-        // ronda terminó; el "raw" incluye la marca de tiempo para que cada
-        // ronda tenga una firma distinta y refreshSellerAfterAuctionWinner
-        // no la descarte como duplicado de la ronda anterior.
-        try {
-          sendRuntimeMessage({
-            type: "EL_AUCTION_WINNER_DETECTED",
-            event: {
-              source: "crono_zero_direct",
-              winner: "", productName: "", price: "", auctionId: "",
-              raw: "crono_zero_" + now,
-              pageUrl: location.href,
-              title: document.title,
-              detectedAt: new Date().toISOString(),
-              meta: { reason: "crono_zero_direct" }
-            }
-          });
-        } catch (_) {}
+        // momento).
+        notifyAuctionEndedDirect("crono_zero_direct");
         // Además se intenta seguir leyendo el texto del ganador (nombre,
         // precio) para el registro/forwarding en el backend — si no lo
         // encuentra, el aviso de arriba ya ha disparado la recarga igualmente.
