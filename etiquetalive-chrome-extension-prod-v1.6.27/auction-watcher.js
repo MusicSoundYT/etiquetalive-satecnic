@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.26-auction";
+  const VERSION = "el-1.6.27-auction";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const SCAN_INTERVAL_MS = 2500;
   const MUTATION_DEBOUNCE_MS = 1000;
@@ -225,7 +225,17 @@
     if (!sig || (sig === lastSig && now - lastEventAt < EVENT_COOLDOWN_MS)) return;
     lastSig = sig;
     lastEventAt = now;
-    sendRuntimeMessage({ type: "EL_AUCTION_WINNER_DETECTED", event });
+    // OJO: ya NO se avisa aquí a Seller para que recargue (se quitó el
+    // sendRuntimeMessage de EL_AUCTION_WINNER_DETECTED). Esta vía lee el feed
+    // de actividad de la página ("X ha ganado el artículo de la subasta..."),
+    // que no desaparece del DOM — en cada escaneo (cada 2,5s) vuelve a
+    // encontrar rondas ya terminadas hace rato, y como cada una tiene una
+    // firma distinta, van esquivando el cooldown de 15s una a una: eso
+    // provocaba una recarga de Seller cada pocos segundos sin relación con
+    // el fin real de la subasta (visto en producción). El aviso de recarga
+    // ahora sale solo de notifyAuctionEndedDirect (crono/cartel/"Ganador de
+    // esta ronda"), que sí está atado al final real de la ronda actual. Esta
+    // vía se mantiene solo para el registro histórico en el backend.
     postAuctionEvent(event);
   }
 
