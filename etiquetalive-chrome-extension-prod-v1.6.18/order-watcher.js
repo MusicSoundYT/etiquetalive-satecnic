@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.17";
+  const VERSION = "el-1.6.18";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const DEFAULT_CONFIG = {
     apiBase: API_BASE,

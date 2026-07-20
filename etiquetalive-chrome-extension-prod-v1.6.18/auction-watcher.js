@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.17-auction";
+  const VERSION = "el-1.6.18-auction";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const SCAN_INTERVAL_MS = 2500;
   const MUTATION_DEBOUNCE_MS = 1000;
@@ -285,24 +285,33 @@
     }
 
     findCronoEl() {
+      // Antes se buscaba primero un DIV grande que contuviera "Finaliza
+      // dentro de" y LUEGO un span con el formato de hora dentro de él —
+      // en una página tan cargada como el panel de Seller ese primer paso
+      // podía no dar con el div correcto (o dar con uno demasiado grande) y
+      // se quedaba sin encontrar nunca el cronómetro. Se invierte el orden:
+      // se busca directamente el span con formato HH:MM/MM:SS (más
+      // específico y fiable) y solo después se confirma que está cerca del
+      // texto "Finaliza dentro de" (subiendo unos pocos niveles de
+      // ancestros), para no enganchar por error algún otro reloj/duración
+      // que hubiera en la página.
       try {
-        const divs = document.querySelectorAll("div");
-        for (const div of divs) {
-          const text = div.textContent || "";
-          let matched = false;
-          for (const kw of CRONO_TRIGGER_KEYWORDS) {
-            if (text.includes(kw)) { matched = true; break; }
-          }
-          if (!matched) continue;
+        const spans = document.querySelectorAll("span");
+        for (const sp of spans) {
+          const txt = (sp.textContent || "").trim();
+          if (!/^\d{1,2}:\d{2}$/.test(txt)) continue;
 
-          const spans = div.querySelectorAll("span");
-          for (const sp of spans) {
-            const txt = (sp.textContent || "").trim();
-            if (/^\d{1,2}:\d{2}$/.test(txt)) {
-              this.attachObserver(sp);
-              return;
-            }
+          let ctx = sp;
+          let nearKeyword = false;
+          for (let i = 0; i < 5 && ctx; i++) {
+            const t = ctx.textContent || "";
+            if (CRONO_TRIGGER_KEYWORDS.some((kw) => t.includes(kw))) { nearKeyword = true; break; }
+            ctx = ctx.parentElement;
           }
+          if (!nearKeyword) continue;
+
+          this.attachObserver(sp);
+          return;
         }
       } catch (_) {}
     }
