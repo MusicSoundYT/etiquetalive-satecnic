@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.19-auction";
+  const VERSION = "el-1.6.20-auction";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const SCAN_INTERVAL_MS = 2500;
   const MUTATION_DEBOUNCE_MS = 1000;
@@ -339,6 +339,30 @@
       if (now - this.lastTrigger < 8000) return; // anti-rebote
       this.lastTrigger = now;
       setTimeout(() => {
+        // Aviso directo a Seller SIEMPRE que el crono llega a 00:00, sin
+        // esperar a haber podido leer el texto del ganador en esta página
+        // (ese parseo es frágil y depende de cómo TikTok lo muestre en cada
+        // momento). El crono llegando a cero es la señal fiable de que la
+        // ronda terminó; el "raw" incluye la marca de tiempo para que cada
+        // ronda tenga una firma distinta y refreshSellerAfterAuctionWinner
+        // no la descarte como duplicado de la ronda anterior.
+        try {
+          sendRuntimeMessage({
+            type: "EL_AUCTION_WINNER_DETECTED",
+            event: {
+              source: "crono_zero_direct",
+              winner: "", productName: "", price: "", auctionId: "",
+              raw: "crono_zero_" + now,
+              pageUrl: location.href,
+              title: document.title,
+              detectedAt: new Date().toISOString(),
+              meta: { reason: "crono_zero_direct" }
+            }
+          });
+        } catch (_) {}
+        // Además se intenta seguir leyendo el texto del ganador (nombre,
+        // precio) para el registro/forwarding en el backend — si no lo
+        // encuentra, el aviso de arriba ya ha disparado la recarga igualmente.
         try { scanDom("crono_zero"); } catch (_) {}
       }, reconcileDelayMs);
     }
