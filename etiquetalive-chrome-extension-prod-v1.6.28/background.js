@@ -1,4 +1,4 @@
-const VERSION = "el-1.6.27-auction";
+const VERSION = "el-1.6.28-auction";
 const API_BASE = "https://etiquetalivetiktok.satecnic.es";
 const DEFAULT_CONFIG = {
   configVersion: "local-default-1",
@@ -148,18 +148,35 @@ function notifySellerOrderTabs(event) {
       lastSellerReloadAt = now;
       for (const tab of tabs) {
         if (!tab?.id) continue;
-        chrome.tabs.reload(tab.id, {}, () => {
-          if (chrome.runtime.lastError) {
-            console.log("[EtiquetaLive] background: error recargando tab", tab.id, chrome.runtime.lastError.message);
-          } else {
-            console.log("[EtiquetaLive] background: recarga forzada de tab", tab.id);
+        // Si la pestaña todavía está cargando (p. ej. de la recarga
+        // anterior, que en Seller puede tardar varios segundos por lo
+        // pesada que es la página), no se interrumpe con otra recarga —
+        // eso dejaba la pestaña "atascada" cargando indefinidamente (visto
+        // en producción). Se deja terminar y se reintenta en la siguiente
+        // ronda, que llega de sobra a tiempo (10-20s después).
+        chrome.tabs.get(tab.id, (freshTab) => {
+          if (chrome.runtime.lastError) return;
+          if (freshTab && freshTab.status === "loading") {
+            console.log("[EtiquetaLive] background: tab", tab.id, "todavía está cargando, se omite esta recarga");
+            return;
           }
+          reloadSellerTab(tab.id);
         });
       }
     });
   } catch (e) {
     console.log("[EtiquetaLive] background: excepción en notifySellerOrderTabs", e);
   }
+}
+
+function reloadSellerTab(tabId) {
+  chrome.tabs.reload(tabId, {}, () => {
+    if (chrome.runtime.lastError) {
+      console.log("[EtiquetaLive] background: error recargando tab", tabId, chrome.runtime.lastError.message);
+    } else {
+      console.log("[EtiquetaLive] background: recarga forzada de tab", tabId);
+    }
+  });
 }
 
 function safeUrl(url, baseUrl) {
