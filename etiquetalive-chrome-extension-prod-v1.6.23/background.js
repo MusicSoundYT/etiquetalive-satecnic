@@ -1,4 +1,4 @@
-const VERSION = "el-1.6.22-auction";
+const VERSION = "el-1.6.23-auction";
 const API_BASE = "https://etiquetalivetiktok.satecnic.es";
 const DEFAULT_CONFIG = {
   configVersion: "local-default-1",
@@ -107,12 +107,21 @@ function rememberAuctionRequest(req) {
 function notifySellerOrderTabs(event) {
   try {
     chrome.tabs.query({ url: "https://seller-es.tiktok.com/order*" }, (tabs) => {
+      console.log("[EtiquetaLive] background: pestañas de Seller encontradas:", (tabs || []).map((t) => t.id));
       for (const tab of tabs || []) {
         if (!tab?.id) continue;
-        chrome.tabs.sendMessage(tab.id, { type: "EL_AUCTION_WINNER_DETECTED", event }, () => void chrome.runtime.lastError);
+        chrome.tabs.sendMessage(tab.id, { type: "EL_AUCTION_WINNER_DETECTED", event }, () => {
+          if (chrome.runtime.lastError) {
+            console.log("[EtiquetaLive] background: error enviando a tab", tab.id, chrome.runtime.lastError.message);
+          } else {
+            console.log("[EtiquetaLive] background: mensaje entregado a tab", tab.id);
+          }
+        });
       }
     });
-  } catch (_) {}
+  } catch (e) {
+    console.log("[EtiquetaLive] background: excepción en notifySellerOrderTabs", e);
+  }
 }
 
 function safeUrl(url, baseUrl) {
@@ -355,6 +364,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === "EL_AUCTION_WINNER_DETECTED") {
     const event = message.event || {};
+    console.log("[EtiquetaLive] background: EL_AUCTION_WINNER_DETECTED recibido", event);
     postToEtiquetaLive("/api/auction/event", { version: VERSION, event, forwardedAt: new Date().toISOString() });
     notifySellerOrderTabs(event);
     sendResponse({ ok: true });

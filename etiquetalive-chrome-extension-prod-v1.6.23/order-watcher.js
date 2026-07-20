@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.22";
+  const VERSION = "el-1.6.23";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const DEFAULT_CONFIG = {
     apiBase: API_BASE,
@@ -149,15 +149,23 @@
     if (!/seller-es\.tiktok\.com\/order/i.test(location.href)) return;
     const existing = Number(sessionStorage.getItem("el_seller_refresh_due_at") || 0);
     const dueAt = Date.now() + Math.max(0, delayMs);
-    if (existing && existing <= dueAt) return;
+    if (existing && existing <= dueAt) {
+      console.log("[EtiquetaLive] Seller: ya había una recarga programada antes, se ignora esta", { existing, dueAt });
+      return;
+    }
+    console.log("[EtiquetaLive] Seller: recarga programada en " + Math.max(0, delayMs) + "ms", { reason });
     sessionStorage.setItem("el_seller_refresh_due_at", String(dueAt));
     sessionStorage.setItem("el_seller_refresh_reason", reason || "scheduled_refresh");
     if (event) sessionStorage.setItem("el_last_auction_winner_event", JSON.stringify({ at: Date.now(), event }).slice(0, 4000));
     setTimeout(() => {
       const target = Number(sessionStorage.getItem("el_seller_refresh_due_at") || 0);
-      if (!target || Date.now() < target - 250) return;
+      if (!target || Date.now() < target - 250) {
+        console.log("[EtiquetaLive] Seller: recarga cancelada/reemplazada, no se ejecuta", { target });
+        return;
+      }
       sessionStorage.removeItem("el_seller_refresh_due_at");
       sessionStorage.setItem("el_last_seller_reload", String(Date.now()));
+      console.log("[EtiquetaLive] Seller: recargando la página ahora", { reason });
       post("/api/live/ping", { version: VERSION, reason: reason || "scheduled_refresh", event: event || {}, href: location.href, at: new Date().toISOString() });
       location.reload();
     }, Math.max(0, delayMs));
@@ -169,18 +177,21 @@
     const ev = event || {};
     const detectedAt = Date.parse(ev.detectedAt || ev.meta?.detectedAt || '') || now;
     if (Math.abs(now - detectedAt) > 120000) {
+      console.log("[EtiquetaLive] Seller: evento de ganador ignorado por antiguo", { now, detectedAt, ev });
       scheduleScan("auction_winner_old_event_ignored");
       return;
     }
     const sig = [ev.winner || '', ev.price || '', ev.auctionId || '', ev.raw || ''].join('|').toLowerCase().slice(0, 500);
     const lastSig = sessionStorage.getItem("el_last_auction_winner_sig") || "";
     if (sig && sig === lastSig) {
+      console.log("[EtiquetaLive] Seller: evento de ganador ignorado por duplicado", { sig });
       scheduleScan("auction_winner_duplicate_ignored");
       return;
     }
     sessionStorage.setItem("el_last_auction_winner_sig", sig);
     const lastReload = Number(sessionStorage.getItem("el_last_seller_reload") || sessionStorage.getItem("el_last_auction_winner_reload") || 0);
     const wait = Math.max(900, 60000 - (now - lastReload));
+    console.log("[EtiquetaLive] Seller: aviso de ganador aceptado, programando recarga", { sig, wait });
     scheduleSellerRefresh("auction_winner_refresh_seller", ev, wait);
   }
 
@@ -191,6 +202,7 @@
     }
     if (message?.type === "EL_SESSION_CHANGED") { loadSessionState(); }
     if (message?.type === "EL_AUCTION_WINNER_DETECTED") {
+      console.log("[EtiquetaLive] Seller: EL_AUCTION_WINNER_DETECTED recibido en esta pestaña", message.event);
       lastChangeAt = Date.now();
       refreshSellerAfterAuctionWinner(message.event || {});
     }
