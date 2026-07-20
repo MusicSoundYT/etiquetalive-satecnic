@@ -5,7 +5,7 @@ import { generateApiKeyForTenant } from "@/lib/auth/api-key";
 
 const KEY_META_COLUMNS = "id, key_prefix, status, created_at, last_used_at";
 
-/** Metadatos de la key activa del tenant (nunca el valor en claro: no se guarda). */
+/** Metadatos de la key activa del tenant (el valor en claro no viaja aquí: usar /reveal). */
 export async function GET() {
   const user = await getSessionUser();
   if (!user?.tenant_id) return NextResponse.json({ error: "No autenticado." }, { status: 401 });

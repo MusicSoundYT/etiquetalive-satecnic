@@ -29,6 +29,13 @@ export function ApiKeyPanel() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const [revealing, setRevealing] = useState(false);
+  const [revealPassword, setRevealPassword] = useState("");
+  const [revealError, setRevealError] = useState<string | null>(null);
+  const [revealLoading, setRevealLoading] = useState(false);
+  const [revealedKey, setRevealedKey] = useState<string | null>(null);
+  const [revealedCopied, setRevealedCopied] = useState(false);
+
   useEffect(() => {
     fetch("/api/account/api-key")
       .then((res) => res.json())
@@ -58,6 +65,8 @@ export function ApiKeyPanel() {
       setNewKey(data.key);
       setMeta(data.apiKey ?? null);
       setCopied(false);
+      setRevealing(false);
+      setRevealedKey(null);
     } finally {
       setLoading(false);
     }
@@ -67,6 +76,40 @@ export function ApiKeyPanel() {
     if (!newKey) return;
     await navigator.clipboard.writeText(newKey);
     setCopied(true);
+  }
+
+  function startReveal() {
+    setRevealing(true);
+    setRevealedKey(null);
+    setRevealError(null);
+    setRevealPassword("");
+    setRevealedCopied(false);
+  }
+
+  async function handleReveal() {
+    setRevealError(null);
+    setRevealLoading(true);
+    try {
+      const res = await fetch("/api/account/api-key/reveal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: revealPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setRevealError(data.error ?? "No se pudo recuperar la clave.");
+        return;
+      }
+      setRevealedKey(data.key);
+    } finally {
+      setRevealLoading(false);
+    }
+  }
+
+  async function handleCopyRevealed() {
+    if (!revealedKey) return;
+    await navigator.clipboard.writeText(revealedKey);
+    setRevealedCopied(true);
   }
 
   if (meta === undefined) {
@@ -109,6 +152,70 @@ export function ApiKeyPanel() {
 
       {!meta && !newKey && (
         <p className="text-sm text-zinc-500 dark:text-zinc-400">Todavía no tienes ninguna clave generada.</p>
+      )}
+
+      {meta && !newKey && !revealing && (
+        <button
+          onClick={startReveal}
+          className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        >
+          Ver clave (p. ej. para pegarla en otro ordenador)
+        </button>
+      )}
+
+      {revealing && !revealedKey && (
+        <div className="space-y-2 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            Repite tu contraseña para volver a mostrar la clave activa.
+          </p>
+          <input
+            type="password"
+            value={revealPassword}
+            onChange={(e) => setRevealPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleReveal()}
+            placeholder="Contraseña"
+            className="w-full rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={handleReveal}
+              disabled={revealLoading || !revealPassword}
+              className={`${buttonClass} w-auto px-3 py-1 text-xs`}
+            >
+              {revealLoading ? "Comprobando…" : "Mostrar"}
+            </button>
+            <button
+              onClick={() => setRevealing(false)}
+              className="rounded border border-zinc-300 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              Cancelar
+            </button>
+          </div>
+          <ErrorText message={revealError} />
+        </div>
+      )}
+
+      {revealedKey && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm dark:border-amber-800 dark:bg-amber-950/40">
+          <p className="mb-2 font-medium text-amber-900 dark:text-amber-200">Tu clave activa:</p>
+          <code className="block break-all rounded bg-white px-2 py-1 text-xs text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
+            {revealedKey}
+          </code>
+          <div className="mt-2 flex gap-2">
+            <button
+              onClick={handleCopyRevealed}
+              className="rounded border border-amber-400 px-2 py-1 text-xs text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/40"
+            >
+              {revealedCopied ? "Copiada ✓" : "Copiar"}
+            </button>
+            <button
+              onClick={() => setRevealing(false)}
+              className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              Ocultar
+            </button>
+          </div>
+        </div>
       )}
 
       <button onClick={handleGenerate} disabled={loading} className={`${buttonClass} w-auto px-4`}>
