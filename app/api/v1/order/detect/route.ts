@@ -163,7 +163,12 @@ export async function POST(req: NextRequest) {
   // charged | demo: se sirve la etiqueta real recién cobrada.
   const finalOrder = "order" in result ? result.order : order;
   const template = await getDefaultTemplate(tenantId);
-  const labelHtml = await generateLabelHtml(finalOrder, template, { preview: false });
+  // inlineScript: false — este HTML lo abre la extensión con window.open() +
+  // document.write() desde un content script, donde Chrome bloquea el
+  // <script> embebido por la CSP de la propia extensión (ver comentario en
+  // generateLabelHtml). La extensión ya hace el autofit y el bloqueo de
+  // clic derecho por su cuenta antes de imprimir.
+  const labelHtml = await generateLabelHtml(finalOrder, template, { preview: false, inlineScript: false });
 
   return withCors(req, NextResponse.json({ tk: finalOrder.tk, order_id: finalOrder.id, label_html: labelHtml }));
 }

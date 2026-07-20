@@ -74,9 +74,17 @@ function extractTikTokName(raw: unknown): string {
 export async function generateLabelHtml(
   order: OrderForLabel,
   t: LabelTemplate,
-  opts?: { preview?: boolean }
+  opts?: { preview?: boolean; inlineScript?: boolean }
 ): Promise<string> {
   const preview = opts?.preview ?? false;
+  // La extensión de Chrome abre la etiqueta con window.open()+document.write()
+  // desde un content script: Chrome MV3 aplica ahí la CSP de la propia
+  // extensión (script-src sin 'unsafe-inline', no se puede relajar), así que
+  // este <script> nunca llega a ejecutarse en ese flujo y solo deja un error
+  // en el registro de la extensión en cada impresión. La extensión ya
+  // reproduce el autofit de texto y el bloqueo de clic derecho por su cuenta
+  // en JS (order-watcher.js) antes de imprimir, así que ahí se omite.
+  const inlineScript = opts?.inlineScript ?? true;
   const priceStr = `${(order.precio_cents / 100).toFixed(2)} ${order.moneda || "EUR"}`;
   const dateStr = formatEtiquetaDate(order.fecha_pedido);
   const qrPayload = preview ? "PREVIEW-NO-VALIDO" : String(order.external_order_id || order.tk || "");
@@ -156,7 +164,9 @@ export async function generateLabelHtml(
   </div>
   ${t.show_qr ? `<div class="qr-area"><img src="${qrSrc}" alt="QR" draggable="false" oncontextmenu="return false" /></div>` : ""}
 </div>
-<script>
+${
+  inlineScript
+    ? `<script>
 (function(){
   document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
   document.addEventListener('dragstart', function(e){ e.preventDefault(); });
@@ -177,6 +187,8 @@ export async function generateLabelHtml(
   window.addEventListener('beforeprint', fitAutoText);
   setTimeout(fitAutoText, 80);
 })();
-</script>
+</script>`
+    : ""
+}
 </body></html>`;
 }
