@@ -1,4 +1,4 @@
-const VERSION = "el-1.6.25-auction";
+const VERSION = "el-1.6.26-auction";
 const API_BASE = "https://etiquetalivetiktok.satecnic.es";
 const DEFAULT_CONFIG = {
   configVersion: "local-default-1",
@@ -114,7 +114,13 @@ function rememberAuctionRequest(req) {
 // (que sí está despierto en ese momento) directamente sobre la pestaña,
 // sin depender de que su JS esté activo.
 let lastSellerReloadAt = 0;
-const SELLER_RELOAD_COOLDOWN_MS = 45000;
+// Visto en producción: las rondas de subasta pueden encadenarse cada
+// 10-20s. Un cooldown de 45s (valor anterior) casi nunca llegaba a
+// liberarse antes de la siguiente ronda, así que en la práctica casi
+// nunca recargaba. Se baja a un valor por debajo del ritmo real de
+// rondas, mientras sigue siendo mucho mayor que el intervalo de escaneo
+// (2.5s) para no recargar por cada detección duplicada de la misma ronda.
+const SELLER_RELOAD_COOLDOWN_MS = 6000;
 
 function notifySellerOrderTabs(event) {
   try {
