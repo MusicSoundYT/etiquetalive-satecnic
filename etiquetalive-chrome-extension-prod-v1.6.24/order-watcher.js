@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.23";
+  const VERSION = "el-1.6.24";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const DEFAULT_CONFIG = {
     apiBase: API_BASE,
@@ -147,11 +147,21 @@
 
   function scheduleSellerRefresh(reason, event, delayMs = 900) {
     if (!/seller-es\.tiktok\.com\/order/i.test(location.href)) return;
+    const now = Date.now();
     const existing = Number(sessionStorage.getItem("el_seller_refresh_due_at") || 0);
-    const dueAt = Date.now() + Math.max(0, delayMs);
-    if (existing && existing <= dueAt) {
-      console.log("[EtiquetaLive] Seller: ya había una recarga programada antes, se ignora esta", { existing, dueAt });
+    const dueAt = now + Math.max(0, delayMs);
+    // "existing" solo bloquea si de verdad sigue pendiente (su hora aún no ha
+    // llegado). Si esa hora ya pasó y nunca se ejecutó (p. ej. la pestaña
+    // estaba en segundo plano y Chrome le congeló los temporizadores),
+    // quedaba huérfana en sessionStorage y bloqueaba CUALQUIER recarga futura
+    // para siempre — visto en producción: una recarga programada 46 minutos
+    // antes seguía "activa" e ignorando todos los avisos posteriores.
+    if (existing && existing > now && existing <= dueAt) {
+      console.log("[EtiquetaLive] Seller: ya había una recarga pendiente, se ignora esta", { existing, dueAt });
       return;
+    }
+    if (existing && existing <= now) {
+      console.log("[EtiquetaLive] Seller: había una recarga caducada sin ejecutar, se reprograma", { existing, now });
     }
     console.log("[EtiquetaLive] Seller: recarga programada en " + Math.max(0, delayMs) + "ms", { reason });
     sessionStorage.setItem("el_seller_refresh_due_at", String(dueAt));

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "EtiquetaLive by AIN",
-  "version": "1.6.23",
+  "version": "1.6.24",
   "description": "Impresión automática de etiquetas para pedidos TikTok Shop — by AIN TRADING HK LTD",
   "icons": {
     "128": "icon128.png"
