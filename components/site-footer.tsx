@@ -8,7 +8,7 @@ export function SiteFooter() {
       <div className="mx-auto flex max-w-5xl flex-col items-center gap-3 sm:flex-row sm:justify-between">
         <div className="flex items-center gap-2">
           <Image src="/logo-woowtienda.png" alt="Woow Insólito" width={28} height={30} />
-          <span>© {new Date().getFullYear()} LUCKY BARNAVIT, S.L. — N.I.F. B-05380084</span>
+          <span>© {new Date().getFullYear()} LUCKY BARNAVIT, S.L.</span>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-4">
           <nav className="flex gap-4">
