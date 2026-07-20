@@ -55,12 +55,15 @@ export async function getMonthlyBillingSummary(year: number, month: number): Pro
     // margen de -2€, ver NEGATIVE_BALANCE_FLOOR_CENTS en charge-print.ts) —
     // esa parte está facturada pero todavía no cobrada, así que se muestra
     // aparte para no dar la impresión de que todo lo "facturado" ya se pagó.
+    // Se incluyen también las cuentas DEMO: en DEMO nunca se cobra por
+    // imprimir, así que si una tiene saldo negativo es porque ya lo tenía de
+    // antes de pasar a DEMO (o por un ajuste manual) — esa deuda es real y
+    // sigue siendo cobrable, el modo DEMO solo afecta a los cobros futuros.
     fetchAllRows<{ balance_cents: number }>((from, to) =>
       supabaseAdmin
         .from("user_balances")
         .select("balance_cents")
         .lt("balance_cents", 0)
-        .eq("is_demo", false)
         .range(from, to)
     ),
   ]);
