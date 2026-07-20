@@ -31,7 +31,7 @@ export function AdminUsersTable({
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", lastName: "", email: "" });
+  const [editForm, setEditForm] = useState({ name: "", lastName: "", email: "", isAdmin: false });
   const [editError, setEditError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [balanceAmount, setBalanceAmount] = useState("");
@@ -156,7 +156,7 @@ export function AdminUsersTable({
   function startEdit(u: AdminUser) {
     setEditingId(u.id);
     setEditError(null);
-    setEditForm({ name: u.name ?? "", lastName: u.last_name ?? "", email: u.email });
+    setEditForm({ name: u.name ?? "", lastName: u.last_name ?? "", email: u.email, isAdmin: u.is_admin });
     setBalanceAmount("");
     setBalanceReason("");
     setBalanceError(null);
@@ -215,6 +215,13 @@ export function AdminUsersTable({
   }
 
   async function saveEdit(userId: string) {
+    const current = users.find((u) => u.id === userId);
+    if (current && current.is_admin !== editForm.isAdmin) {
+      const msg = editForm.isAdmin
+        ? "¿Convertir a este usuario en administrador? Tendrá acceso completo al panel de Administración."
+        : "¿Quitar el rol de administrador a este usuario? Perderá el acceso al panel de Administración.";
+      if (!confirm(msg)) return;
+    }
     setSavingId(userId);
     setEditError(null);
     try {
@@ -225,6 +232,7 @@ export function AdminUsersTable({
           name: editForm.name,
           lastName: editForm.lastName || undefined,
           email: editForm.email,
+          isAdmin: editForm.isAdmin,
         }),
       });
       const data = await res.json().catch(() => null);
@@ -471,6 +479,14 @@ export function AdminUsersTable({
                           className={smallInputClass}
                         />
                       </div>
+                      <label className="flex items-center gap-1.5 pb-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+                        <input
+                          type="checkbox"
+                          checked={editForm.isAdmin}
+                          onChange={(e) => setEditForm({ ...editForm, isAdmin: e.target.checked })}
+                        />
+                        Administrador
+                      </label>
                       <button
                         onClick={() => saveEdit(u.id)}
                         disabled={savingId === u.id}
