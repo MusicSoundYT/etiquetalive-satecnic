@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.28-auction";
+  const VERSION = "el-1.6.29-auction";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const SCAN_INTERVAL_MS = 2500;
   const MUTATION_DEBOUNCE_MS = 1000;
@@ -344,19 +344,24 @@
         }
         if (value === lastWinnerLabelValue) return; // ya procesado este ganador
         lastWinnerLabelValue = value;
-        notifyAuctionEndedDirect("winner_label_direct");
-        emitAuctionEvent({
-          source: "winner_label_dom",
-          winner: value.slice(0, 80),
-          productName: "",
-          price: "",
-          auctionId: "",
-          raw: txt.slice(0, 500),
-          pageUrl: location.href,
-          title: document.title,
-          detectedAt: new Date().toISOString(),
-          meta: { reason: "winner_label_dom" }
-        });
+        // Igual que el crono y el cartel: se espera un margen antes de avisar
+        // a Seller, para dar tiempo a que TikTok termine de generar el
+        // pedido del ganador antes de recargar la página de pedidos.
+        setTimeout(() => {
+          notifyAuctionEndedDirect("winner_label_direct");
+          emitAuctionEvent({
+            source: "winner_label_dom",
+            winner: value.slice(0, 80),
+            productName: "",
+            price: "",
+            auctionId: "",
+            raw: txt.slice(0, 500),
+            pageUrl: location.href,
+            title: document.title,
+            detectedAt: new Date().toISOString(),
+            meta: { reason: "winner_label_dom" }
+          });
+        }, reconcileDelayMs);
         return;
       }
     } catch (_) {}
