@@ -417,10 +417,6 @@ export function TemplateDesigner({ initialTemplates }: { initialTemplates: Label
         >
           {testPrinting ? "Generando..." : "Imprimir etiqueta de prueba"}
         </button>
-        <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-          Con datos inventados (no de la base de datos), para comprobar que la impresora
-          funciona bien. No consume saldo.
-        </p>
         <ErrorText message={testPrintError} />
       </div>
     </div>

@@ -28,7 +28,7 @@ export default async function DashboardPage({
   ]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8">
+    <div className="mx-auto max-w-7xl space-y-8">
       <div>
         <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Pedidos</h1>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">Todos tus pedidos, sin límite.</p>

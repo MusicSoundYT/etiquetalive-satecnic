@@ -211,7 +211,7 @@ export function OrdersTable({
           </tbody>
         </table>
       </div>
-      <div className="mt-3 flex items-center justify-between text-sm text-zinc-500 dark:text-zinc-400">
+      <div className="mt-4 flex items-center justify-between text-sm text-zinc-500 dark:text-zinc-400">
         <span>
           {total} pedido{total === 1 ? "" : "s"} en total
         </span>

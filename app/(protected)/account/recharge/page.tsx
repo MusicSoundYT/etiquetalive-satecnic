@@ -28,10 +28,7 @@ export default async function RechargePage() {
             </div>
           </div>
 
-          <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
-            Elige un importe. Se descontará de tu saldo el precio por etiqueta según tu rango.
-          </p>
-          <div className="mt-6">
+          <div className="mt-4">
             <RechargeForm />
           </div>
         </div>

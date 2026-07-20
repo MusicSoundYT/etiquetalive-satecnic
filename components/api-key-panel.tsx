@@ -159,7 +159,7 @@ export function ApiKeyPanel() {
           onClick={startReveal}
           className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
         >
-          Ver clave (p. ej. para pegarla en otro ordenador)
+          Ver clave API
         </button>
       )}
 
