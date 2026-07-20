@@ -1,7 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
-export const ORDERS_PAGE_SIZE = 25;
+export const ORDERS_PAGE_SIZE = 300;
 const EXPORT_LIMIT = 5000;
 
 export type OrdersFilter = {

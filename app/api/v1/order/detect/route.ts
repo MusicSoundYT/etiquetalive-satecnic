@@ -39,6 +39,11 @@ function parseExtensionDate(value?: string): string | null {
   return Number.isNaN(t) ? null : new Date(t).toISOString();
 }
 
+// Al recargar seller-es.tiktok.com, TikTok sigue mostrando pedidos de horas
+// atrás — no tiene sentido dar de alta un pedido "nuevo" tan viejo (ya se
+// habrá gestionado o ya no forma parte del directo en curso).
+const MAX_ORDER_AGE_MS = 4 * 60 * 60 * 1000;
+
 /**
  * Endpoint que llama la extensión de Chrome (content script `order-watcher.js`)
  * cada vez que detecta una venta en la página de pedidos de TikTok Seller.
@@ -66,7 +71,16 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
 
   let order = existing;
+  const fechaPedido = parseExtensionDate(body.fecha_pedido);
+
   if (!order) {
+    // Al recargar seller-es.tiktok.com, TikTok sigue mostrando pedidos de
+    // horas atrás — si el scrapeo trae una fecha y es más vieja que el
+    // margen, no lo damos de alta como pedido "nuevo".
+    if (fechaPedido && Date.now() - new Date(fechaPedido).getTime() > MAX_ORDER_AGE_MS) {
+      return withCors(req, NextResponse.json({ skipped: "too_old" }));
+    }
+
     const { data: tk } = await supabaseAdmin.rpc("next_tk", { p_tenant_id: tenantId });
 
     const { data: created, error } = await supabaseAdmin
@@ -78,7 +92,7 @@ export async function POST(req: NextRequest) {
         cliente: body.cliente || null,
         precio_cents: Math.round(body.precio * 100),
         moneda: body.moneda,
-        fecha_pedido: parseExtensionDate(body.fecha_pedido),
+        fecha_pedido: fechaPedido,
         raw_payload: body.raw ? { source: "chrome_extension", detect_only: body.detect_only, raw: body.raw } : null,
       })
       .select("*")
@@ -88,6 +102,28 @@ export async function POST(req: NextRequest) {
       return withCors(req, NextResponse.json({ error: "No se pudo registrar el pedido." }, { status: 500 }));
     }
     order = created;
+  } else {
+    // Reconciliación: un pedido ya detectado puede haberse guardado con
+    // datos incompletos (p. ej. precio 0€ porque el scrapeo de esa pasada no
+    // encontró el precio en el DOM). Si un nuevo escaneo trae un valor
+    // válido y distinto del guardado, se corrige — pero nunca se sobreescribe
+    // un dato bueno con uno vacío/cero, para no perder información por un
+    // escaneo posterior parcial.
+    const updates: Record<string, unknown> = {};
+    const newPrecioCents = Math.round(body.precio * 100);
+    if (newPrecioCents > 0 && newPrecioCents !== order.precio_cents) updates.precio_cents = newPrecioCents;
+    if (body.cliente && body.cliente !== order.cliente) updates.cliente = body.cliente;
+    if (fechaPedido && fechaPedido !== order.fecha_pedido) updates.fecha_pedido = fechaPedido;
+
+    if (Object.keys(updates).length > 0) {
+      const { data: updated } = await supabaseAdmin
+        .from("orders")
+        .update(updates)
+        .eq("id", order.id)
+        .select("*")
+        .maybeSingle();
+      if (updated) order = updated;
+    }
   }
 
   if (body.detect_only || !body.auto_print_eligible) {
@@ -115,9 +151,16 @@ export async function POST(req: NextRequest) {
   if (result.status === "blocked" || result.status === "no_owner") {
     return withCors(req, NextResponse.json({ tk: order.tk, order_id: order.id, error: "blocked" }));
   }
+  if (result.status === "already_charged") {
+    // Esta misma auto-detección ya cobró e imprimió este pedido antes (dos
+    // pestañas abiertas, o el mismo pedido detectado dos veces seguidas) —
+    // no se vuelve a generar ni a devolver la etiqueta, para que la
+    // extensión no imprima el mismo pedido dos veces sin que el usuario lo
+    // pida explícitamente (eso sí sigue disponible como "Reimprimir" manual).
+    return withCors(req, NextResponse.json({ tk: order.tk, order_id: order.id }));
+  }
 
-  // charged | already_charged | demo: en los tres casos se sirve la etiqueta
-  // real (la reimpresión, igual que en el botón manual, no vuelve a cobrar).
+  // charged | demo: se sirve la etiqueta real recién cobrada.
   const finalOrder = "order" in result ? result.order : order;
   const template = await getDefaultTemplate(tenantId);
   const labelHtml = await generateLabelHtml(finalOrder, template, { preview: false });

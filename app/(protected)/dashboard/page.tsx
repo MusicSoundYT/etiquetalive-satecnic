@@ -37,8 +37,9 @@ export default async function DashboardPage({
       <OrdersStatsCards stats={stats} />
 
       <Suspense fallback={null}>
-        <OrdersFilterBar />
-        <OrdersTable orders={orders} total={total} page={page} pageSize={ORDERS_PAGE_SIZE} />
+        <OrdersFilterBar>
+          <OrdersTable orders={orders} total={total} page={page} pageSize={ORDERS_PAGE_SIZE} />
+        </OrdersFilterBar>
       </Suspense>
     </div>
   );

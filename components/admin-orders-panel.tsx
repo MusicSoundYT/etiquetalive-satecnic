@@ -136,6 +136,7 @@ export function AdminOrdersPanel({
                       hour: "2-digit",
                       minute: "2-digit",
                       second: "2-digit",
+                      timeZone: "Europe/Madrid",
                     })}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-zinc-700 dark:text-zinc-300">{o.estado_impresion}</td>

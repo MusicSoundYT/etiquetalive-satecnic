@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.18";
+  const VERSION = "el-1.6.19";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const DEFAULT_CONFIG = {
     apiBase: API_BASE,
@@ -218,14 +218,17 @@
       // TikTok/API a veces devuelve MM/DD/YYYY. Si el segundo número >12, giramos a DD/MM/YYYY.
       let day = a, month = b;
       if (b > 12 && a <= 12) { day = b; month = a; }
-      const now = new Date();
-      const hh = String(m[4] || now.getHours()).padStart(2, '0');
-      const mm = String(m[5] || now.getMinutes()).padStart(2, '0');
+      // Si el texto capturado no traía hora, NO inventamos "ahora": eso
+      // guardaría la hora de guardado en vez de la hora real del pedido.
+      // Mejor no mandar fecha (el backend la deja en null) que mandar una falsa.
+      if (!m[4]) return "";
+      const hh = String(m[4]).padStart(2, '0');
+      const mm = String(m[5]).padStart(2, '0');
       return `${String(day).padStart(2,'0')}/${String(month).padStart(2,'0')}/${m[3]} ${hh}:${mm}`;
     }
     const d = new Date(s);
-    const safe = Number.isNaN(d.getTime()) ? new Date() : d;
-    return safe.toLocaleString('es-ES', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:false });
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleString('es-ES', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:false });
   }
 
   function parseOrderDateMs(dateText) {
@@ -540,7 +543,12 @@
       const t = getText(cur);
       if (!t.includes(orderId)) continue;
       if (r.width < 500 || r.height < 35) continue;
-      if (r.height > 390 || r.width > window.innerWidth * 0.985) continue;
+      // TikTok añadió filas más altas a la tarjeta de pedido (miniatura de
+      // producto, botón "Recibo del vídeo"...) — con el límite antiguo
+      // (390px) esas tarjetas se descartaban antes de llegar al contenedor
+      // completo, y el escaneo se quedaba solo con la cabecera (sin precio
+      // ni método de pago), lo que producía precio 0€/fecha vacía.
+      if (r.height > 620 || r.width > window.innerWidth * 0.985) continue;
       best = cur;
       if (/Crear\s+etiqueta|Crear\s+e\s+imprimir|Pendiente\s+de\s+env[ií]o|Tarjeta|Apple\s+Pay|Paypal|Env[ií]o\s+est[aá]ndar|\d{1,6}(?:[,.]\d{1,2})?\s*€/i.test(t)) {
         return cur;
