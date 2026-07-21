@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.30";
+  const VERSION = "el-1.6.31";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const DEFAULT_CONFIG = {
     apiBase: API_BASE,
@@ -145,67 +145,6 @@
     sendRuntimeMessage({ type: "EL_TIKTOK_ORDER_REQUEST", request: event.data.request });
   });
 
-  function scheduleSellerRefresh(reason, event, delayMs = 900) {
-    if (!/seller-es\.tiktok\.com\/order/i.test(location.href)) return;
-    const now = Date.now();
-    const existing = Number(sessionStorage.getItem("el_seller_refresh_due_at") || 0);
-    const dueAt = now + Math.max(0, delayMs);
-    // "existing" solo bloquea si de verdad sigue pendiente (su hora aún no ha
-    // llegado). Si esa hora ya pasó y nunca se ejecutó (p. ej. la pestaña
-    // estaba en segundo plano y Chrome le congeló los temporizadores),
-    // quedaba huérfana en sessionStorage y bloqueaba CUALQUIER recarga futura
-    // para siempre — visto en producción: una recarga programada 46 minutos
-    // antes seguía "activa" e ignorando todos los avisos posteriores.
-    if (existing && existing > now && existing <= dueAt) {
-      console.log("[EtiquetaLive] Seller: ya había una recarga pendiente, se ignora esta", { existing, dueAt });
-      return;
-    }
-    if (existing && existing <= now) {
-      console.log("[EtiquetaLive] Seller: había una recarga caducada sin ejecutar, se reprograma", { existing, now });
-    }
-    console.log("[EtiquetaLive] Seller: recarga programada en " + Math.max(0, delayMs) + "ms", { reason });
-    sessionStorage.setItem("el_seller_refresh_due_at", String(dueAt));
-    sessionStorage.setItem("el_seller_refresh_reason", reason || "scheduled_refresh");
-    if (event) sessionStorage.setItem("el_last_auction_winner_event", JSON.stringify({ at: Date.now(), event }).slice(0, 4000));
-    setTimeout(() => {
-      const target = Number(sessionStorage.getItem("el_seller_refresh_due_at") || 0);
-      if (!target || Date.now() < target - 250) {
-        console.log("[EtiquetaLive] Seller: recarga cancelada/reemplazada, no se ejecuta", { target });
-        return;
-      }
-      sessionStorage.removeItem("el_seller_refresh_due_at");
-      sessionStorage.setItem("el_last_seller_reload", String(Date.now()));
-      console.log("[EtiquetaLive] Seller: recargando la página ahora", { reason });
-      post("/api/live/ping", { version: VERSION, reason: reason || "scheduled_refresh", event: event || {}, href: location.href, at: new Date().toISOString() });
-      location.reload();
-    }, Math.max(0, delayMs));
-  }
-
-  function refreshSellerAfterAuctionWinner(event) {
-    if (!/seller-es\.tiktok\.com\/order/i.test(location.href)) return;
-    const now = Date.now();
-    const ev = event || {};
-    const detectedAt = Date.parse(ev.detectedAt || ev.meta?.detectedAt || '') || now;
-    if (Math.abs(now - detectedAt) > 120000) {
-      console.log("[EtiquetaLive] Seller: evento de ganador ignorado por antiguo", { now, detectedAt, ev });
-      scheduleScan("auction_winner_old_event_ignored");
-      return;
-    }
-    const sig = [ev.winner || '', ev.price || '', ev.auctionId || '', ev.raw || ''].join('|').toLowerCase().slice(0, 500);
-    const lastSig = sessionStorage.getItem("el_last_auction_winner_sig") || "";
-    if (sig && sig === lastSig) {
-      console.log("[EtiquetaLive] Seller: evento de ganador ignorado por duplicado", { sig });
-      scheduleScan("auction_winner_duplicate_ignored");
-      return;
-    }
-    sessionStorage.setItem("el_last_auction_winner_sig", sig);
-    // Los 6s de margen para que TikTok registre el pedido ya se aplicaron en
-    // auction-watcher.js (reconcileDelayMs) antes de mandar este aviso: no se
-    // suma otra espera aquí, o se acumulaban hasta 60s extra sobre esos 6s.
-    console.log("[EtiquetaLive] Seller: aviso de ganador aceptado, recargando Seller", { sig });
-    scheduleSellerRefresh("auction_winner_refresh_seller", ev, 0);
-  }
-
   chrome.runtime?.onMessage?.addListener?.((message) => {
     if (message?.type === "EL_BACKGROUND_SYNC_OK") {
       lastBackgroundSyncAt = Date.now();
@@ -213,9 +152,18 @@
     }
     if (message?.type === "EL_SESSION_CHANGED") { loadSessionState(); }
     if (message?.type === "EL_AUCTION_WINNER_DETECTED") {
+      // La recarga real de esta pestaña la hace background.js con
+      // chrome.tabs.reload() (ver notifySellerOrderTabs), que sigue
+      // funcionando aunque esta pestaña esté en segundo plano y sus propios
+      // temporizadores congelados. Antes esta pestaña programaba ADEMÁS su
+      // propia location.reload() en paralelo (con sessionStorage y su propio
+      // cooldown): con rondas de subasta seguidas cada pocos segundos, las
+      // dos recargas competían por la misma pestaña casi a la vez y la
+      // página nunca llegaba a asentarse para escanear e imprimir — visto en
+      // producción tras varias rondas seguidas. Se quita esa recarga
+      // redundante; aquí solo queda el registro para depurar.
       console.log("[EtiquetaLive] Seller: EL_AUCTION_WINNER_DETECTED recibido en esta pestaña", message.event);
       lastChangeAt = Date.now();
-      refreshSellerAfterAuctionWinner(message.event || {});
     }
   });
 
@@ -780,7 +728,8 @@
     setInterval(checkExtensionContext, 20000);
     // La página de Seller Orders ya NO se recarga periódicamente por tiempo:
     // solo se recarga cuando el crono de la subasta llega a 00:00 y se
-    // detecta el ganador (ver refreshSellerAfterAuctionWinner / scheduleSellerRefresh).
+    // detecta el ganador — la recarga la dispara background.js con
+    // chrome.tabs.reload() (ver notifySellerOrderTabs), no esta pestaña.
     const obs = new MutationObserver(() => scheduleScan("mutation"));
     obs.observe(document.documentElement || document.body, { childList: true, subtree: true, characterData: true });
   };
