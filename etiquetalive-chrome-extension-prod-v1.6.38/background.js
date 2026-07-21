@@ -1,4 +1,4 @@
-const VERSION = "el-1.6.37-auction";
+const VERSION = "el-1.6.38-auction";
 const API_BASE = "https://etiquetalivetiktok.satecnic.es";
 const DEFAULT_CONFIG = {
   configVersion: "local-default-1",
@@ -472,3 +472,17 @@ function pingSellerTabsToScan() {
 refreshRemoteConfig("startup");
 setInterval(() => refreshRemoteConfig("interval"), Number(cfg("extensionConfigRefreshMs")) || 300000);
 setInterval(pingSellerTabsToScan, 5000);
+
+// Red de seguridad de verdad fiable: chrome.alarms está diseñado por Chrome
+// para sobrevivir aunque este service worker se apague (a diferencia de
+// setInterval, que se pierde si el proceso muere) — eso sí puede pasar aquí
+// si Chrome no ve actividad "de verdad" durante un rato. La pestaña de la
+// subasta ya despierta este proceso y pide el escaneo cada 2,5s en el caso
+// normal (rápido), pero si por lo que sea eso también fallara (esa pestaña
+// cerrada, en segundo plano largo rato, etc.), esta alarma garantiza que
+// como mucho pasa 1 minuto sin ningún escaneo — el mínimo que permite Chrome
+// para alarmas periódicas, no se puede bajar de ahí.
+chrome.alarms.create("el_scan_seller_tabs", { periodInMinutes: 1 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === "el_scan_seller_tabs") pingSellerTabsToScan();
+});
