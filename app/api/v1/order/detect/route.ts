@@ -26,14 +26,55 @@ const bodySchema = z.object({
   auto_print_eligible: z.boolean().optional().default(false),
 });
 
-/** Convierte "DD/MM/YYYY HH:mm[:ss]" (formato que manda la extensión) a ISO. */
+/**
+ * Convierte una fecha/hora de pared en Europe/Madrid (donde opera el
+ * vendedor) al instante UTC real que le corresponde, teniendo en cuenta el
+ * horario de verano/invierno. `new Date(y, mo, d, h, mi, s)` interpreta esos
+ * números en la zona horaria del propio servidor (aquí, UTC) — eso hacía que
+ * "20:25" (hora de Madrid) se guardara como 20:25 UTC, es decir 22:25 de
+ * Madrid: 2 horas por delante de la hora real del pedido, visto en
+ * producción en las etiquetas impresas.
+ */
+function madridWallTimeToUtcISOString(y: number, monthIndex: number, d: number, h: number, mi: number, s: number): string {
+  const guessUtcMs = Date.UTC(y, monthIndex, d, h, mi, s);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Madrid",
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  })
+    .formatToParts(new Date(guessUtcMs))
+    .reduce<Record<string, string>>((acc, p) => {
+      if (p.type !== "literal") acc[p.type] = p.value;
+      return acc;
+    }, {});
+  const madridAsUtcMs = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second)
+  );
+  const offsetMs = madridAsUtcMs - guessUtcMs;
+  return new Date(guessUtcMs - offsetMs).toISOString();
+}
+
+/** Convierte "DD/MM/YYYY HH:mm[:ss]" (formato que manda la extensión, hora de Madrid) a ISO UTC. */
 function parseExtensionDate(value?: string): string | null {
   if (!value) return null;
   const m = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
   if (m) {
     const [, d, mo, y, h, mi, s] = m;
-    const dt = new Date(Number(y), Number(mo) - 1, Number(d), Number(h || 0), Number(mi || 0), Number(s || 0));
-    return Number.isNaN(dt.getTime()) ? null : dt.toISOString();
+    try {
+      return madridWallTimeToUtcISOString(Number(y), Number(mo) - 1, Number(d), Number(h || 0), Number(mi || 0), Number(s || 0));
+    } catch {
+      return null;
+    }
   }
   const t = Date.parse(value);
   return Number.isNaN(t) ? null : new Date(t).toISOString();
