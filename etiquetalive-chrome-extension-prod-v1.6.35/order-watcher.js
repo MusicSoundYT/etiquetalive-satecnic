@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.34";
+  const VERSION = "el-1.6.35";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const DEFAULT_CONFIG = {
     apiBase: API_BASE,
@@ -404,7 +404,15 @@
         raw: c.raw || "",
         auto_print_eligible: autoPrint
       });
-      countSessionDetected(p.orderId);
+      // Solo se marca como "ya procesado" si la petición llegó a buen puerto
+      // (result no es null). Si falló — p. ej. Seller se recargó justo
+      // mientras estaba en camino, cancelando la petición a medias — antes
+      // se marcaba igualmente como hecho y ese pedido no se volvía a
+      // intentar NUNCA, aunque nunca hubiera llegado a guardarse (visto en
+      // producción: pedidos recién ganados ausentes de la base de datos,
+      // pero ya en detectedIds). Si falla, se deja sin marcar para que el
+      // siguiente escaneo lo reintente.
+      if (result) countSessionDetected(p.orderId);
       if (result?.label_html && autoPrint) {
         printLabel(result.label_html, result.tk);
         countSessionPrinted(p.orderId);
