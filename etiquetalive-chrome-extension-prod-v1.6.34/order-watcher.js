@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.33";
+  const VERSION = "el-1.6.34";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const DEFAULT_CONFIG = {
     apiBase: API_BASE,
@@ -363,22 +363,6 @@
     waitForImagesAndPrint(iframe.contentWindow, () => iframe.remove(), tk);
   }
 
-  function rememberIgnored(orderId) {
-    if (!orderId || sessionState.ignoredIds.includes(orderId)) return;
-    sessionState.ignoredIds.push(orderId);
-    saveSessionCounters();
-  }
-
-  async function detectOnly(c) {
-    const p = c.parsed;
-    if (!p?.orderId) return;
-    await postDetectedOrder("/api/v1/order/detect", {
-      order_id: p.orderId, cliente: p.customer || "", precio: priceToNumber(p.price), moneda: "EUR",
-      fecha_pedido: normalizeOrderDate(p.orderDate), raw: c.raw || "", detect_only: true
-    });
-    countSessionDetected(p.orderId);
-  }
-
   async function sendDetectedOrders(cards) {
     const valid = cards.filter(c => c.parsed?.orderId && c.hasSubasta);
     console.log("[EtiquetaLive] Seller: sendDetectedOrders, válidas:", valid.length, "de", cards.length, {
@@ -387,19 +371,22 @@
       autoPrintEnabled: sessionState.autoPrintEnabled,
     });
 
-    // Al iniciar Live, TikTok muestra pedidos antiguos. Solo usamos los 2 primeros como referencia,
-    // los detectamos sin imprimir, e ignoramos el resto de visibles para que no salten etiquetas antiguas.
-    if (sessionState.active && !sessionState.baselineDone) {
-      console.log("[EtiquetaLive] Seller: haciendo baseline de la sesión Live (ignora el resto de visibles)");
-      const baseline = valid.slice(0, 2);
-      const ignored = valid.slice(2);
-      for (const c of baseline) await detectOnly(c);
-      for (const c of ignored) rememberIgnored(c.parsed.orderId);
-      sessionState.baselineDone = true;
-      saveSessionCounters();
-      return;
-    }
-
+    // Antes había aquí un mecanismo de "baseline": al iniciar Live, se
+    // detectaban sin imprimir los 2 primeros pedidos visibles y se ignoraban
+    // PARA SIEMPRE el resto (para no imprimir pedidos antiguos de antes de
+    // empezar la sesión). Se quita: la marca "baselineDone" se guarda en
+    // chrome.storage.local de forma asíncrona, y si Seller se recargaba
+    // justo en ese instante (recarga forzada por background.js al terminar
+    // una subasta), esa escritura podía perderse — el siguiente arranque
+    // volvía a ver baselineDone=false y repetía el baseline con los pedidos
+    // MÁS NUEVOS de la lista, marcándolos como si fueran antiguos (sin
+    // imprimir) y, peor, metiendo al resto en la lista de "ignorados para
+    // siempre". Visto en producción: dos pedidos recién ganados se guardaron
+    // con detect_only=true y nunca llegaron a imprimirse.
+    // shouldAutoPrint()/belongsToActivePrintSession() ya distinguen pedidos
+    // antiguos de nuevos por su FECHA real frente a la hora de inicio de la
+    // sesión — no depende de ninguna marca que se pueda perder en una
+    // recarga, así que cubre el mismo caso sin ese riesgo.
     for (const c of valid) {
       const p = c.parsed;
       if (sessionState.detectedIds.includes(p.orderId) || sessionState.ignoredIds.includes(p.orderId) || sessionState.printedIds.includes(p.orderId)) {
