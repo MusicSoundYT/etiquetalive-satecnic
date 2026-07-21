@@ -1,4 +1,4 @@
-const VERSION = "el-1.6.35-auction";
+const VERSION = "el-1.6.36-auction";
 const API_BASE = "https://etiquetalivetiktok.satecnic.es";
 const DEFAULT_CONFIG = {
   configVersion: "local-default-1",
@@ -439,5 +439,25 @@ chrome.tabs.onRemoved.addListener(tabId => {
   stateByTab.delete(tabId);
 });
 
+// El setInterval interno de order-watcher.js (scan() cada 5s) depende de que
+// Chrome mantenga activos los temporizadores de esa pestaña — si lleva un
+// rato en segundo plano, puede congelarlos (igual que congelaba el
+// location.reload() antiguo), y entonces deja de escanear aunque la propia
+// pestaña se recargue bien de vez en cuando. Visto en producción: minutos
+// sin ningún escaneo nuevo. Los mensajes SÍ le llegan a la pestaña aunque
+// esté congelada, así que desde aquí se le pide explícitamente que escanee
+// cada pocos segundos, sin depender solo de su propio temporizador.
+function pingSellerTabsToScan() {
+  try {
+    chrome.tabs.query({ url: "https://seller-es.tiktok.com/order*" }, (tabs) => {
+      for (const tab of tabs || []) {
+        if (!tab?.id) continue;
+        chrome.tabs.sendMessage(tab.id, { type: "EL_FORCE_SCAN" }, () => void chrome.runtime.lastError);
+      }
+    });
+  } catch (_) {}
+}
+
 refreshRemoteConfig("startup");
 setInterval(() => refreshRemoteConfig("interval"), Number(cfg("extensionConfigRefreshMs")) || 300000);
+setInterval(pingSellerTabsToScan, 5000);

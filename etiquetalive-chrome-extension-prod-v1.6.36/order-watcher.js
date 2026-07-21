@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.35";
+  const VERSION = "el-1.6.36";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const DEFAULT_CONFIG = {
     apiBase: API_BASE,
@@ -164,6 +164,17 @@
       // redundante; aquí solo queda el registro para depurar.
       console.log("[EtiquetaLive] Seller: EL_AUCTION_WINNER_DETECTED recibido en esta pestaña", message.event);
       lastChangeAt = Date.now();
+    }
+    if (message?.type === "EL_FORCE_SCAN") {
+      // Con la pestaña en segundo plano un buen rato, Chrome puede congelar
+      // el setInterval interno de scan() (igual que congelaba el location.
+      // reload() antiguo) — visto en producción: minutos sin ningún escaneo
+      // nuevo pese a que Seller se recargaba bien. Los mensajes SÍ le llegan
+      // a esta pestaña aunque esté congelada (background.js los manda cada
+      // pocos segundos), así que se usan también para forzar un escaneo,
+      // sin depender solo del temporizador propio de la página.
+      console.log("[EtiquetaLive] Seller: EL_FORCE_SCAN recibido, forzando escaneo");
+      try { scan("force_scan"); } catch (_) {}
     }
   });
 
