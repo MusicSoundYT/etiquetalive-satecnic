@@ -1,4 +1,4 @@
-const VERSION = "el-1.6.36-auction";
+const VERSION = "el-1.6.37-auction";
 const API_BASE = "https://etiquetalivetiktok.satecnic.es";
 const DEFAULT_CONFIG = {
   configVersion: "local-default-1",
@@ -426,6 +426,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log("[EtiquetaLive] background: EL_AUCTION_WINNER_DETECTED recibido", event);
     postToEtiquetaLive("/api/auction/event", { version: VERSION, event, forwardedAt: new Date().toISOString() });
     notifySellerOrderTabs(event);
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (message?.type === "EL_PING_SELLER_SCAN") {
+    // Lo manda auction-watcher.js en cada uno de sus ciclos (cada 2,5s,
+    // fiables porque esa pestaña suele estar en primer plano) — se usa para
+    // despertar este service worker y reenviar el aviso a Seller, en vez de
+    // depender solo del setInterval propio de aquí (que Chrome puede parar
+    // si este proceso lleva un rato sin actividad "de verdad").
+    pingSellerTabsToScan();
     sendResponse({ ok: true });
     return false;
   }

@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.36-auction";
+  const VERSION = "el-1.6.37-auction";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const SCAN_INTERVAL_MS = 2500;
   const MUTATION_DEBOUNCE_MS = 1000;
@@ -241,6 +241,15 @@
 
   function scanDom(reason = "tick") {
     if (!/shop\.tiktok\.com\/streamer\/live/i.test(location.href)) return;
+    // El service worker de background.js puede quedarse dormido (Chrome lo
+    // apaga si no ve actividad "de verdad" durante un rato, un simple
+    // setInterval ahí dentro no basta para mantenerlo despierto) — así que su
+    // propio aviso periódico a Seller para que escanee dejaba de dispararse.
+    // Esta pestaña (la de la subasta) sí tiene un ciclo fiable cada 2,5s, así
+    // que es ella quien despierta al background y le pide que reenvíe el
+    // aviso a Seller, en vez de depender del temporizador del propio service
+    // worker.
+    sendRuntimeMessage({ type: "EL_PING_SELLER_SCAN" });
     try { checkFinishedBanner(); } catch (_) {}
     try { checkWinnerLabel(); } catch (_) {}
     if (scanning) return;
