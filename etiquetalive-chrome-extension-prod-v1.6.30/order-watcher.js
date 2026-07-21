@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.29";
+  const VERSION = "el-1.6.30";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const DEFAULT_CONFIG = {
     apiBase: API_BASE,
@@ -199,10 +199,11 @@
       return;
     }
     sessionStorage.setItem("el_last_auction_winner_sig", sig);
-    const lastReload = Number(sessionStorage.getItem("el_last_seller_reload") || sessionStorage.getItem("el_last_auction_winner_reload") || 0);
-    const wait = Math.max(900, 60000 - (now - lastReload));
-    console.log("[EtiquetaLive] Seller: aviso de ganador aceptado, programando recarga", { sig, wait });
-    scheduleSellerRefresh("auction_winner_refresh_seller", ev, wait);
+    // Los 6s de margen para que TikTok registre el pedido ya se aplicaron en
+    // auction-watcher.js (reconcileDelayMs) antes de mandar este aviso: no se
+    // suma otra espera aquí, o se acumulaban hasta 60s extra sobre esos 6s.
+    console.log("[EtiquetaLive] Seller: aviso de ganador aceptado, recargando Seller", { sig });
+    scheduleSellerRefresh("auction_winner_refresh_seller", ev, 0);
   }
 
   chrome.runtime?.onMessage?.addListener?.((message) => {
@@ -325,27 +326,55 @@
       try { if (cleanup) cleanup(); } catch(e) {}
     };
     try { win.addEventListener('afterprint', () => setTimeout(runCleanup, 350), { once: true }); } catch(e) {}
-    const doPrint = async () => {
+
+    // Abre primero el diálogo de impresión y avisa al backend después, sin
+    // esperar su respuesta: si el servidor tarda, ya no retrasa el print().
+    const doPrint = () => {
       fitAutoTextInWindow(win);
-      try { await markPrintApi(tk, "extension_before_print"); } catch(e) {}
       try { win.focus(); win.print(); } catch(e) {}
+      markPrintApi(tk, "extension_print_invoked").catch(() => {});
       setTimeout(runCleanup, 12000);
     };
+
+    // Puede haber varias vías que intenten disparar la impresión (el timeout
+    // de seguridad de 3500ms y la carga real de imágenes) — con este guard
+    // solo la primera que llegue imprime de verdad.
+    let printStarted = false;
+    const doPrintOnce = () => {
+      if (printStarted) return;
+      printStarted = true;
+      doPrint();
+    };
+
     try {
       const doc = win.document;
       const imgs = Array.from(doc.images || []);
       const qrImgs = imgs.filter(img => /qr|codigo|c[oó]digo|data:image/i.test((img.src || '') + ' ' + (img.alt || '') + ' ' + (img.className || '')));
       const targets = qrImgs.length ? qrImgs : imgs;
-      if (!targets.length) return setTimeout(doPrint, 900);
+      if (!targets.length) {
+        // Dos frames de margen para que el navegador termine de pintar la
+        // etiqueta, sin perder casi un segundo entero en una espera fija.
+        requestAnimationFrame(() => requestAnimationFrame(doPrintOnce));
+        return;
+      }
       let pending = targets.length;
-      const done = () => { if (--pending <= 0) setTimeout(doPrint, 250); };
-      const timeout = setTimeout(doPrint, 3500);
+      const timeout = setTimeout(doPrintOnce, 3500);
+      const done = () => {
+        pending--;
+        // El timeout de seguridad solo se cancela cuando TODAS las imágenes
+        // han terminado, no con la primera que cargue: si otra se quedaba
+        // colgada, la impresión no llegaba a dispararse nunca.
+        if (pending <= 0) {
+          clearTimeout(timeout);
+          setTimeout(doPrintOnce, 250);
+        }
+      };
       targets.forEach(img => {
         if (img.complete && img.naturalWidth > 0) return done();
-        img.addEventListener('load', () => { clearTimeout(timeout); done(); }, { once: true });
-        img.addEventListener('error', () => { clearTimeout(timeout); done(); }, { once: true });
+        img.addEventListener('load', done, { once: true });
+        img.addEventListener('error', done, { once: true });
       });
-    } catch (_) { setTimeout(doPrint, 1200); }
+    } catch (_) { setTimeout(doPrintOnce, 1200); }
   }
 
   function printLabel(labelHtml, tk) {
