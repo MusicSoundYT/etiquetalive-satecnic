@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.32";
+  const VERSION = "el-1.6.33";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const DEFAULT_CONFIG = {
     apiBase: API_BASE,
@@ -216,7 +216,10 @@
 
   async function postDetectedOrder(path, data) {
     const apiKey = await getApiKey();
-    if (!apiKey) return null;
+    if (!apiKey) {
+      console.log("[EtiquetaLive] Seller: postDetectedOrder sin API key configurada", path);
+      return null;
+    }
     const body = JSON.stringify(data);
     try {
       const resp = await fetch(apiBase() + path, {
@@ -228,8 +231,13 @@
         },
         body
       });
-      return await resp.json().catch(() => null);
-    } catch (_) { return null; }
+      const json = await resp.json().catch(() => null);
+      if (!resp.ok) console.log("[EtiquetaLive] Seller: postDetectedOrder respuesta no OK", path, resp.status, json);
+      return json;
+    } catch (e) {
+      console.log("[EtiquetaLive] Seller: postDetectedOrder error de red", path, e);
+      return null;
+    }
   }
 
   async function markPrintApi(tk, action) {
@@ -373,10 +381,16 @@
 
   async function sendDetectedOrders(cards) {
     const valid = cards.filter(c => c.parsed?.orderId && c.hasSubasta);
+    console.log("[EtiquetaLive] Seller: sendDetectedOrders, válidas:", valid.length, "de", cards.length, {
+      sessionActive: sessionState.active,
+      baselineDone: sessionState.baselineDone,
+      autoPrintEnabled: sessionState.autoPrintEnabled,
+    });
 
     // Al iniciar Live, TikTok muestra pedidos antiguos. Solo usamos los 2 primeros como referencia,
     // los detectamos sin imprimir, e ignoramos el resto de visibles para que no salten etiquetas antiguas.
     if (sessionState.active && !sessionState.baselineDone) {
+      console.log("[EtiquetaLive] Seller: haciendo baseline de la sesión Live (ignora el resto de visibles)");
       const baseline = valid.slice(0, 2);
       const ignored = valid.slice(2);
       for (const c of baseline) await detectOnly(c);
@@ -388,8 +402,12 @@
 
     for (const c of valid) {
       const p = c.parsed;
-      if (sessionState.detectedIds.includes(p.orderId) || sessionState.ignoredIds.includes(p.orderId) || sessionState.printedIds.includes(p.orderId)) continue;
+      if (sessionState.detectedIds.includes(p.orderId) || sessionState.ignoredIds.includes(p.orderId) || sessionState.printedIds.includes(p.orderId)) {
+        console.log("[EtiquetaLive] Seller: pedido ya procesado antes, se omite", p.orderId);
+        continue;
+      }
       const autoPrint = shouldAutoPrint(p);
+      console.log("[EtiquetaLive] Seller: procesando pedido nuevo", p.orderId, { autoPrint, price: p.price, date: p.orderDate });
       const result = await postDetectedOrder("/api/v1/order/detect", {
         order_id: p.orderId,
         cliente: p.customer || "",
@@ -472,7 +490,10 @@
 
   async function post(path, data) {
     const apiKey = await getApiKey();
-    if (!apiKey) return; // sin clave configurada todavía, el servidor la rechazaría igualmente
+    if (!apiKey) {
+      console.log("[EtiquetaLive] Seller: post() sin API key configurada, no se manda nada", path);
+      return; // sin clave configurada todavía, el servidor la rechazaría igualmente
+    }
     const body = JSON.stringify(data);
     fetch(apiBase() + path, {
       method: "POST",
@@ -482,7 +503,9 @@
         "x-api-key": apiKey
       },
       body: body
-    }).catch(() => {});
+    }).then((res) => {
+      if (!res.ok) console.log("[EtiquetaLive] Seller: post() respuesta no OK", path, res.status);
+    }).catch((e) => console.log("[EtiquetaLive] Seller: post() error de red", path, e));
   }
 
   function textLines(text) {
@@ -669,13 +692,17 @@
 
   function scan(reason) {
     if (!/seller-es\.tiktok\.com\/order/i.test(location.href)) return;
-    if (scanning) return;
+    if (scanning) {
+      console.log("[EtiquetaLive] Seller: scan() ya en curso, se omite esta llamada", reason);
+      return;
+    }
     const now = Date.now();
     if (reason === "mutation" && now - lastScanAt < (Number(cfg("mutationDebounceMs")) || 1800)) return;
     scanning = true;
     lastScanAt = now;
     try {
       const headers = uniqueHeaders(findOrderHeaderElements());
+      console.log("[EtiquetaLive] Seller: scan()", reason, "cabeceras encontradas:", headers.length);
       const cards = [];
       for (let i = 0; i < headers.length; i++) {
         const h = headers[i].el;
@@ -700,10 +727,13 @@
       cards.sort((a,b) => a.rect.top - b.rect.top);
       const sig = cards.map(c => `${c.orderNumber}:${c.hasSubasta}:${c.parsed?.complete ? 'Parsed' : 'NoParsed'}:${c.parsed?.price || ''}:${c.parsed?.customer || ''}`).join("|");
       if (sig && sig !== lastSig) {
+        console.log("[EtiquetaLive] Seller: firma cambiada, se manda a detectar", { reason, cards: cards.length });
         lastSig = sig;
         lastChangeAt = Date.now();
         post("/api/orders/scan", { version: VERSION, reason, href: location.href, capturedAt: new Date().toISOString(), count: cards.length, cards });
         sendDetectedOrders(cards);
+      } else {
+        console.log("[EtiquetaLive] Seller: firma igual que la anterior, no se manda nada", reason);
       }
     } finally {
       scanning = false;
