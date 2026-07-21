@@ -1,4 +1,4 @@
-const VERSION = "el-1.6.31-auction";
+const VERSION = "el-1.6.32-auction";
 const API_BASE = "https://etiquetalivetiktok.satecnic.es";
 const DEFAULT_CONFIG = {
   configVersion: "local-default-1",
@@ -114,13 +114,17 @@ function rememberAuctionRequest(req) {
 // (que sí está despierto en ese momento) directamente sobre la pestaña,
 // sin depender de que su JS esté activo.
 let lastSellerReloadAt = 0;
-// Visto en producción: las rondas de subasta pueden encadenarse cada
-// 10-20s. Un cooldown de 45s (valor anterior) casi nunca llegaba a
-// liberarse antes de la siguiente ronda, así que en la práctica casi
-// nunca recargaba. Se baja a un valor por debajo del ritmo real de
-// rondas, mientras sigue siendo mucho mayor que el intervalo de escaneo
-// (2.5s) para no recargar por cada detección duplicada de la misma ronda.
-const SELLER_RELOAD_COOLDOWN_MS = 6000;
+// Visto en producción: con rondas muy seguidas (cada 6-10s en directos
+// rápidos), un cooldown de 6s recargaba en casi todas las rondas — pero
+// Seller es una página pesada y order-watcher.js necesita unos segundos
+// para asentarse y completar un escaneo (primer escaneo a 1,5s, luego cada
+// 5s). Si la siguiente recarga llega antes de que le dé tiempo a escanear,
+// la pestaña se pasa la vida recargando sin llegar a leer ni guardar
+// ningún pedido — "se queda trabada" según se acelera el ritmo del directo.
+// Como Seller siempre muestra TODOS los pedidos recientes (no solo el
+// último), una recarga bien asentada cada 15s recoge de sobra los pedidos
+// de varias rondas seguidas sin necesidad de recargar en cada una.
+const SELLER_RELOAD_COOLDOWN_MS = 15000;
 
 function notifySellerOrderTabs(event) {
   try {
