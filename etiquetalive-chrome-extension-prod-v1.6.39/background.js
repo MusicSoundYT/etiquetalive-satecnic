@@ -1,4 +1,4 @@
-const VERSION = "el-1.6.38-auction";
+const VERSION = "el-1.6.39-auction";
 const API_BASE = "https://etiquetalivetiktok.satecnic.es";
 const DEFAULT_CONFIG = {
   configVersion: "local-default-1",
@@ -114,17 +114,13 @@ function rememberAuctionRequest(req) {
 // (que sí está despierto en ese momento) directamente sobre la pestaña,
 // sin depender de que su JS esté activo.
 let lastSellerReloadAt = 0;
-// Visto en producción: con rondas muy seguidas (cada 6-10s en directos
-// rápidos), un cooldown de 6s recargaba en casi todas las rondas — pero
-// Seller es una página pesada y order-watcher.js necesita unos segundos
-// para asentarse y completar un escaneo (primer escaneo a 1,5s, luego cada
-// 5s). Si la siguiente recarga llega antes de que le dé tiempo a escanear,
-// la pestaña se pasa la vida recargando sin llegar a leer ni guardar
-// ningún pedido — "se queda trabada" según se acelera el ritmo del directo.
-// Como Seller siempre muestra TODOS los pedidos recientes (no solo el
-// último), una recarga bien asentada cada 15s recoge de sobra los pedidos
-// de varias rondas seguidas sin necesidad de recargar en cada una.
-const SELLER_RELOAD_COOLDOWN_MS = 15000;
+// Visto en producción: las rondas de subasta pueden encadenarse cada
+// 10-20s. Un cooldown de 45s (valor anterior) casi nunca llegaba a
+// liberarse antes de la siguiente ronda, así que en la práctica casi
+// nunca recargaba. Se baja a un valor por debajo del ritmo real de
+// rondas, mientras sigue siendo mucho mayor que el intervalo de escaneo
+// (2.5s) para no recargar por cada detección duplicada de la misma ronda.
+const SELLER_RELOAD_COOLDOWN_MS = 6000;
 
 function notifySellerOrderTabs(event) {
   try {
@@ -152,35 +148,18 @@ function notifySellerOrderTabs(event) {
       lastSellerReloadAt = now;
       for (const tab of tabs) {
         if (!tab?.id) continue;
-        // Si la pestaña todavía está cargando (p. ej. de la recarga
-        // anterior, que en Seller puede tardar varios segundos por lo
-        // pesada que es la página), no se interrumpe con otra recarga —
-        // eso dejaba la pestaña "atascada" cargando indefinidamente (visto
-        // en producción). Se deja terminar y se reintenta en la siguiente
-        // ronda, que llega de sobra a tiempo (10-20s después).
-        chrome.tabs.get(tab.id, (freshTab) => {
-          if (chrome.runtime.lastError) return;
-          if (freshTab && freshTab.status === "loading") {
-            console.log("[EtiquetaLive] background: tab", tab.id, "todavía está cargando, se omite esta recarga");
-            return;
+        chrome.tabs.reload(tab.id, {}, () => {
+          if (chrome.runtime.lastError) {
+            console.log("[EtiquetaLive] background: error recargando tab", tab.id, chrome.runtime.lastError.message);
+          } else {
+            console.log("[EtiquetaLive] background: recarga forzada de tab", tab.id);
           }
-          reloadSellerTab(tab.id);
         });
       }
     });
   } catch (e) {
     console.log("[EtiquetaLive] background: excepción en notifySellerOrderTabs", e);
   }
-}
-
-function reloadSellerTab(tabId) {
-  chrome.tabs.reload(tabId, {}, () => {
-    if (chrome.runtime.lastError) {
-      console.log("[EtiquetaLive] background: error recargando tab", tabId, chrome.runtime.lastError.message);
-    } else {
-      console.log("[EtiquetaLive] background: recarga forzada de tab", tabId);
-    }
-  });
 }
 
 function safeUrl(url, baseUrl) {
@@ -430,17 +409,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
-  if (message?.type === "EL_PING_SELLER_SCAN") {
-    // Lo manda auction-watcher.js en cada uno de sus ciclos (cada 2,5s,
-    // fiables porque esa pestaña suele estar en primer plano) — se usa para
-    // despertar este service worker y reenviar el aviso a Seller, en vez de
-    // depender solo del setInterval propio de aquí (que Chrome puede parar
-    // si este proceso lleva un rato sin actividad "de verdad").
-    pingSellerTabsToScan();
-    sendResponse({ ok: true });
-    return false;
-  }
-
   return false;
 });
 
@@ -450,39 +418,5 @@ chrome.tabs.onRemoved.addListener(tabId => {
   stateByTab.delete(tabId);
 });
 
-// El setInterval interno de order-watcher.js (scan() cada 5s) depende de que
-// Chrome mantenga activos los temporizadores de esa pestaña — si lleva un
-// rato en segundo plano, puede congelarlos (igual que congelaba el
-// location.reload() antiguo), y entonces deja de escanear aunque la propia
-// pestaña se recargue bien de vez en cuando. Visto en producción: minutos
-// sin ningún escaneo nuevo. Los mensajes SÍ le llegan a la pestaña aunque
-// esté congelada, así que desde aquí se le pide explícitamente que escanee
-// cada pocos segundos, sin depender solo de su propio temporizador.
-function pingSellerTabsToScan() {
-  try {
-    chrome.tabs.query({ url: "https://seller-es.tiktok.com/order*" }, (tabs) => {
-      for (const tab of tabs || []) {
-        if (!tab?.id) continue;
-        chrome.tabs.sendMessage(tab.id, { type: "EL_FORCE_SCAN" }, () => void chrome.runtime.lastError);
-      }
-    });
-  } catch (_) {}
-}
-
 refreshRemoteConfig("startup");
 setInterval(() => refreshRemoteConfig("interval"), Number(cfg("extensionConfigRefreshMs")) || 300000);
-setInterval(pingSellerTabsToScan, 5000);
-
-// Red de seguridad de verdad fiable: chrome.alarms está diseñado por Chrome
-// para sobrevivir aunque este service worker se apague (a diferencia de
-// setInterval, que se pierde si el proceso muere) — eso sí puede pasar aquí
-// si Chrome no ve actividad "de verdad" durante un rato. La pestaña de la
-// subasta ya despierta este proceso y pide el escaneo cada 2,5s en el caso
-// normal (rápido), pero si por lo que sea eso también fallara (esa pestaña
-// cerrada, en segundo plano largo rato, etc.), esta alarma garantiza que
-// como mucho pasa 1 minuto sin ningún escaneo — el mínimo que permite Chrome
-// para alarmas periódicas, no se puede bajar de ahí.
-chrome.alarms.create("el_scan_seller_tabs", { periodInMinutes: 1 });
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === "el_scan_seller_tabs") pingSellerTabsToScan();
-});

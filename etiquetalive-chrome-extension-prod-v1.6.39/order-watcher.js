@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.38";
+  const VERSION = "el-1.6.39";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const DEFAULT_CONFIG = {
     apiBase: API_BASE,
@@ -145,6 +145,68 @@
     sendRuntimeMessage({ type: "EL_TIKTOK_ORDER_REQUEST", request: event.data.request });
   });
 
+  function scheduleSellerRefresh(reason, event, delayMs = 900) {
+    if (!/seller-es\.tiktok\.com\/order/i.test(location.href)) return;
+    const now = Date.now();
+    const existing = Number(sessionStorage.getItem("el_seller_refresh_due_at") || 0);
+    const dueAt = now + Math.max(0, delayMs);
+    // "existing" solo bloquea si de verdad sigue pendiente (su hora aún no ha
+    // llegado). Si esa hora ya pasó y nunca se ejecutó (p. ej. la pestaña
+    // estaba en segundo plano y Chrome le congeló los temporizadores),
+    // quedaba huérfana en sessionStorage y bloqueaba CUALQUIER recarga futura
+    // para siempre — visto en producción: una recarga programada 46 minutos
+    // antes seguía "activa" e ignorando todos los avisos posteriores.
+    if (existing && existing > now && existing <= dueAt) {
+      console.log("[EtiquetaLive] Seller: ya había una recarga pendiente, se ignora esta", { existing, dueAt });
+      return;
+    }
+    if (existing && existing <= now) {
+      console.log("[EtiquetaLive] Seller: había una recarga caducada sin ejecutar, se reprograma", { existing, now });
+    }
+    console.log("[EtiquetaLive] Seller: recarga programada en " + Math.max(0, delayMs) + "ms", { reason });
+    sessionStorage.setItem("el_seller_refresh_due_at", String(dueAt));
+    sessionStorage.setItem("el_seller_refresh_reason", reason || "scheduled_refresh");
+    if (event) sessionStorage.setItem("el_last_auction_winner_event", JSON.stringify({ at: Date.now(), event }).slice(0, 4000));
+    setTimeout(() => {
+      const target = Number(sessionStorage.getItem("el_seller_refresh_due_at") || 0);
+      if (!target || Date.now() < target - 250) {
+        console.log("[EtiquetaLive] Seller: recarga cancelada/reemplazada, no se ejecuta", { target });
+        return;
+      }
+      sessionStorage.removeItem("el_seller_refresh_due_at");
+      sessionStorage.setItem("el_last_seller_reload", String(Date.now()));
+      console.log("[EtiquetaLive] Seller: recargando la página ahora", { reason });
+      post("/api/live/ping", { version: VERSION, reason: reason || "scheduled_refresh", event: event || {}, href: location.href, at: new Date().toISOString() });
+      location.reload();
+    }, Math.max(0, delayMs));
+  }
+
+  function refreshSellerAfterAuctionWinner(event) {
+    if (!/seller-es\.tiktok\.com\/order/i.test(location.href)) return;
+    const now = Date.now();
+    const ev = event || {};
+    const detectedAt = Date.parse(ev.detectedAt || ev.meta?.detectedAt || '') || now;
+    if (Math.abs(now - detectedAt) > 120000) {
+      console.log("[EtiquetaLive] Seller: evento de ganador ignorado por antiguo", { now, detectedAt, ev });
+      scheduleScan("auction_winner_old_event_ignored");
+      return;
+    }
+    const sig = [ev.winner || '', ev.price || '', ev.auctionId || '', ev.raw || ''].join('|').toLowerCase().slice(0, 500);
+    const lastSig = sessionStorage.getItem("el_last_auction_winner_sig") || "";
+    if (sig && sig === lastSig) {
+      console.log("[EtiquetaLive] Seller: evento de ganador ignorado por duplicado", { sig });
+      scheduleScan("auction_winner_duplicate_ignored");
+      return;
+    }
+    sessionStorage.setItem("el_last_auction_winner_sig", sig);
+    // Sin cooldown adicional aquí: los 6000ms de reconcileDelayMs ya
+    // aplicados en auction-watcher.js antes de avisar son el único retraso
+    // intencionado tras el fin de la subasta. Añadir otro margen (hasta 60s)
+    // encima de eso solo apilaba esperas sin necesidad.
+    console.log("[EtiquetaLive] Seller: aviso de ganador aceptado, recargando Seller", { sig });
+    scheduleSellerRefresh("auction_winner_refresh_seller", ev, 0);
+  }
+
   chrome.runtime?.onMessage?.addListener?.((message) => {
     if (message?.type === "EL_BACKGROUND_SYNC_OK") {
       lastBackgroundSyncAt = Date.now();
@@ -152,29 +214,9 @@
     }
     if (message?.type === "EL_SESSION_CHANGED") { loadSessionState(); }
     if (message?.type === "EL_AUCTION_WINNER_DETECTED") {
-      // La recarga real de esta pestaña la hace background.js con
-      // chrome.tabs.reload() (ver notifySellerOrderTabs), que sigue
-      // funcionando aunque esta pestaña esté en segundo plano y sus propios
-      // temporizadores congelados. Antes esta pestaña programaba ADEMÁS su
-      // propia location.reload() en paralelo (con sessionStorage y su propio
-      // cooldown): con rondas de subasta seguidas cada pocos segundos, las
-      // dos recargas competían por la misma pestaña casi a la vez y la
-      // página nunca llegaba a asentarse para escanear e imprimir — visto en
-      // producción tras varias rondas seguidas. Se quita esa recarga
-      // redundante; aquí solo queda el registro para depurar.
       console.log("[EtiquetaLive] Seller: EL_AUCTION_WINNER_DETECTED recibido en esta pestaña", message.event);
       lastChangeAt = Date.now();
-    }
-    if (message?.type === "EL_FORCE_SCAN") {
-      // Con la pestaña en segundo plano un buen rato, Chrome puede congelar
-      // el setInterval interno de scan() (igual que congelaba el location.
-      // reload() antiguo) — visto en producción: minutos sin ningún escaneo
-      // nuevo pese a que Seller se recargaba bien. Los mensajes SÍ le llegan
-      // a esta pestaña aunque esté congelada (background.js los manda cada
-      // pocos segundos), así que se usan también para forzar un escaneo,
-      // sin depender solo del temporizador propio de la página.
-      console.log("[EtiquetaLive] Seller: EL_FORCE_SCAN recibido, forzando escaneo");
-      try { scan("force_scan"); } catch (_) {}
+      refreshSellerAfterAuctionWinner(message.event || {});
     }
   });
 
@@ -227,10 +269,7 @@
 
   async function postDetectedOrder(path, data) {
     const apiKey = await getApiKey();
-    if (!apiKey) {
-      console.log("[EtiquetaLive] Seller: postDetectedOrder sin API key configurada", path);
-      return null;
-    }
+    if (!apiKey) return null;
     const body = JSON.stringify(data);
     try {
       const resp = await fetch(apiBase() + path, {
@@ -242,13 +281,8 @@
         },
         body
       });
-      const json = await resp.json().catch(() => null);
-      if (!resp.ok) console.log("[EtiquetaLive] Seller: postDetectedOrder respuesta no OK", path, resp.status, json);
-      return json;
-    } catch (e) {
-      console.log("[EtiquetaLive] Seller: postDetectedOrder error de red", path, e);
-      return null;
-    }
+      return await resp.json().catch(() => null);
+    } catch (_) { return null; }
   }
 
   async function markPrintApi(tk, action) {
@@ -374,38 +408,41 @@
     waitForImagesAndPrint(iframe.contentWindow, () => iframe.remove(), tk);
   }
 
+  function rememberIgnored(orderId) {
+    if (!orderId || sessionState.ignoredIds.includes(orderId)) return;
+    sessionState.ignoredIds.push(orderId);
+    saveSessionCounters();
+  }
+
+  async function detectOnly(c) {
+    const p = c.parsed;
+    if (!p?.orderId) return;
+    await postDetectedOrder("/api/v1/order/detect", {
+      order_id: p.orderId, cliente: p.customer || "", precio: priceToNumber(p.price), moneda: "EUR",
+      fecha_pedido: normalizeOrderDate(p.orderDate), raw: c.raw || "", detect_only: true
+    });
+    countSessionDetected(p.orderId);
+  }
+
   async function sendDetectedOrders(cards) {
     const valid = cards.filter(c => c.parsed?.orderId && c.hasSubasta);
-    console.log("[EtiquetaLive] Seller: sendDetectedOrders, válidas:", valid.length, "de", cards.length, {
-      sessionActive: sessionState.active,
-      baselineDone: sessionState.baselineDone,
-      autoPrintEnabled: sessionState.autoPrintEnabled,
-    });
 
-    // Antes había aquí un mecanismo de "baseline": al iniciar Live, se
-    // detectaban sin imprimir los 2 primeros pedidos visibles y se ignoraban
-    // PARA SIEMPRE el resto (para no imprimir pedidos antiguos de antes de
-    // empezar la sesión). Se quita: la marca "baselineDone" se guarda en
-    // chrome.storage.local de forma asíncrona, y si Seller se recargaba
-    // justo en ese instante (recarga forzada por background.js al terminar
-    // una subasta), esa escritura podía perderse — el siguiente arranque
-    // volvía a ver baselineDone=false y repetía el baseline con los pedidos
-    // MÁS NUEVOS de la lista, marcándolos como si fueran antiguos (sin
-    // imprimir) y, peor, metiendo al resto en la lista de "ignorados para
-    // siempre". Visto en producción: dos pedidos recién ganados se guardaron
-    // con detect_only=true y nunca llegaron a imprimirse.
-    // shouldAutoPrint()/belongsToActivePrintSession() ya distinguen pedidos
-    // antiguos de nuevos por su FECHA real frente a la hora de inicio de la
-    // sesión — no depende de ninguna marca que se pueda perder en una
-    // recarga, así que cubre el mismo caso sin ese riesgo.
+    // Al iniciar Live, TikTok muestra pedidos antiguos. Solo usamos los 2 primeros como referencia,
+    // los detectamos sin imprimir, e ignoramos el resto de visibles para que no salten etiquetas antiguas.
+    if (sessionState.active && !sessionState.baselineDone) {
+      const baseline = valid.slice(0, 2);
+      const ignored = valid.slice(2);
+      for (const c of baseline) await detectOnly(c);
+      for (const c of ignored) rememberIgnored(c.parsed.orderId);
+      sessionState.baselineDone = true;
+      saveSessionCounters();
+      return;
+    }
+
     for (const c of valid) {
       const p = c.parsed;
-      if (sessionState.detectedIds.includes(p.orderId) || sessionState.ignoredIds.includes(p.orderId) || sessionState.printedIds.includes(p.orderId)) {
-        console.log("[EtiquetaLive] Seller: pedido ya procesado antes, se omite", p.orderId);
-        continue;
-      }
+      if (sessionState.detectedIds.includes(p.orderId) || sessionState.ignoredIds.includes(p.orderId) || sessionState.printedIds.includes(p.orderId)) continue;
       const autoPrint = shouldAutoPrint(p);
-      console.log("[EtiquetaLive] Seller: procesando pedido nuevo", p.orderId, { autoPrint, price: p.price, date: p.orderDate });
       const result = await postDetectedOrder("/api/v1/order/detect", {
         order_id: p.orderId,
         cliente: p.customer || "",
@@ -415,15 +452,7 @@
         raw: c.raw || "",
         auto_print_eligible: autoPrint
       });
-      // Solo se marca como "ya procesado" si la petición llegó a buen puerto
-      // (result no es null). Si falló — p. ej. Seller se recargó justo
-      // mientras estaba en camino, cancelando la petición a medias — antes
-      // se marcaba igualmente como hecho y ese pedido no se volvía a
-      // intentar NUNCA, aunque nunca hubiera llegado a guardarse (visto en
-      // producción: pedidos recién ganados ausentes de la base de datos,
-      // pero ya en detectedIds). Si falla, se deja sin marcar para que el
-      // siguiente escaneo lo reintente.
-      if (result) countSessionDetected(p.orderId);
+      countSessionDetected(p.orderId);
       if (result?.label_html && autoPrint) {
         printLabel(result.label_html, result.tk);
         countSessionPrinted(p.orderId);
@@ -496,10 +525,7 @@
 
   async function post(path, data) {
     const apiKey = await getApiKey();
-    if (!apiKey) {
-      console.log("[EtiquetaLive] Seller: post() sin API key configurada, no se manda nada", path);
-      return; // sin clave configurada todavía, el servidor la rechazaría igualmente
-    }
+    if (!apiKey) return; // sin clave configurada todavía, el servidor la rechazaría igualmente
     const body = JSON.stringify(data);
     fetch(apiBase() + path, {
       method: "POST",
@@ -509,9 +535,7 @@
         "x-api-key": apiKey
       },
       body: body
-    }).then((res) => {
-      if (!res.ok) console.log("[EtiquetaLive] Seller: post() respuesta no OK", path, res.status);
-    }).catch((e) => console.log("[EtiquetaLive] Seller: post() error de red", path, e));
+    }).catch(() => {});
   }
 
   function textLines(text) {
@@ -698,17 +722,13 @@
 
   function scan(reason) {
     if (!/seller-es\.tiktok\.com\/order/i.test(location.href)) return;
-    if (scanning) {
-      console.log("[EtiquetaLive] Seller: scan() ya en curso, se omite esta llamada", reason);
-      return;
-    }
+    if (scanning) return;
     const now = Date.now();
     if (reason === "mutation" && now - lastScanAt < (Number(cfg("mutationDebounceMs")) || 1800)) return;
     scanning = true;
     lastScanAt = now;
     try {
       const headers = uniqueHeaders(findOrderHeaderElements());
-      console.log("[EtiquetaLive] Seller: scan()", reason, "cabeceras encontradas:", headers.length);
       const cards = [];
       for (let i = 0; i < headers.length; i++) {
         const h = headers[i].el;
@@ -733,13 +753,10 @@
       cards.sort((a,b) => a.rect.top - b.rect.top);
       const sig = cards.map(c => `${c.orderNumber}:${c.hasSubasta}:${c.parsed?.complete ? 'Parsed' : 'NoParsed'}:${c.parsed?.price || ''}:${c.parsed?.customer || ''}`).join("|");
       if (sig && sig !== lastSig) {
-        console.log("[EtiquetaLive] Seller: firma cambiada, se manda a detectar", { reason, cards: cards.length });
         lastSig = sig;
         lastChangeAt = Date.now();
         post("/api/orders/scan", { version: VERSION, reason, href: location.href, capturedAt: new Date().toISOString(), count: cards.length, cards });
         sendDetectedOrders(cards);
-      } else {
-        console.log("[EtiquetaLive] Seller: firma igual que la anterior, no se manda nada", reason);
       }
     } finally {
       scanning = false;
@@ -764,8 +781,7 @@
     setInterval(checkExtensionContext, 20000);
     // La página de Seller Orders ya NO se recarga periódicamente por tiempo:
     // solo se recarga cuando el crono de la subasta llega a 00:00 y se
-    // detecta el ganador — la recarga la dispara background.js con
-    // chrome.tabs.reload() (ver notifySellerOrderTabs), no esta pestaña.
+    // detecta el ganador (ver refreshSellerAfterAuctionWinner / scheduleSellerRefresh).
     const obs = new MutationObserver(() => scheduleScan("mutation"));
     obs.observe(document.documentElement || document.body, { childList: true, subtree: true, characterData: true });
   };
