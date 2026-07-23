@@ -112,7 +112,24 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
 
   let order = existing;
-  const fechaPedido = parseExtensionDate(body.fecha_pedido);
+  let fechaPedido = parseExtensionDate(body.fecha_pedido);
+
+  // Red de seguridad: una fecha de pedido nunca puede ser del futuro (más
+  // allá de un pequeño margen por desajuste de reloj) ni de hace muchísimo
+  // tiempo. Visto en producción: un fallo de scrapeo en la extensión
+  // enganchaba por error un "Plazo de entrega" (fecha límite de envío) en
+  // vez de la fecha real del pedido, guardando pedidos con fecha varios días
+  // en el futuro. Se corrige en el origen (ver order-watcher.js), pero esta
+  // comprobación se mantiene aquí como respaldo ante cualquier otra fuente
+  // de fecha mal formada, presente o futura.
+  if (fechaPedido) {
+    const deltaMs = new Date(fechaPedido).getTime() - Date.now();
+    const FUTURE_TOLERANCE_MS = 10 * 60 * 1000;
+    const MAX_PAST_MS = 30 * 24 * 60 * 60 * 1000;
+    if (deltaMs > FUTURE_TOLERANCE_MS || deltaMs < -MAX_PAST_MS) {
+      fechaPedido = null;
+    }
+  }
 
   if (!order) {
     // Al recargar seller-es.tiktok.com, TikTok sigue mostrando pedidos de

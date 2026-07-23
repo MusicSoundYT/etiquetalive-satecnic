@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.40";
+  const VERSION = "el-1.6.41";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const DEFAULT_CONFIG = {
     apiBase: API_BASE,
@@ -179,9 +179,34 @@
     return m ? Number(m[1].replace(',', '.')) : 0;
   }
 
+  const WEEKDAY_INDEX = {
+    domingo: 0, lunes: 1, martes: 2, "miércoles": 3, "miercoles": 3,
+    jueves: 4, viernes: 5, "sábado": 6, "sabado": 6
+  };
+
+  function formatDdMmYyyyHhMm(d) {
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${day}/${month}/${d.getFullYear()} ${hh}:${mm}`;
+  }
+
+  // Seller muestra la fecha del pedido de formas muy distintas según la
+  // vista: a veces una fecha absoluta pegada al nombre del cliente, a veces
+  // "Hace X min/horas" o "<día de la semana> HH:MM:SS" sin fecha completa.
+  // Antes, cuando no encajaba con el formato absoluto, se probaba con
+  // new Date(texto) como último recurso — su comportamiento con textos así
+  // no está definido (varía según motor/versión) y es lo que producía
+  // fechas absurdas en producción (pedidos guardados varios días en el
+  // futuro). Ahora cada formato se interpreta de forma explícita y, si no
+  // se reconoce ninguno, se deja sin fecha en vez de arriesgar una
+  // interpretación indefinida.
   function normalizeOrderDate(dateText) {
     const s = norm(dateText || "");
-    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::\d{2})?)?/);
+    if (!s) return "";
+
+    let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::\d{2})?)?/);
     if (m) {
       let a = Number(m[1]), b = Number(m[2]);
       // TikTok/API a veces devuelve MM/DD/YYYY. Si el segundo número >12, giramos a DD/MM/YYYY.
@@ -195,9 +220,36 @@
       const mm = String(m[5]).padStart(2, '0');
       return `${String(day).padStart(2,'0')}/${String(month).padStart(2,'0')}/${m[3]} ${hh}:${mm}`;
     }
-    const d = new Date(s);
-    if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleString('es-ES', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:false });
+
+    // "Hace X segundos/minutos/horas" — relativo al reloj del propio
+    // navegador (el del vendedor, ya en su hora local real).
+    m = s.match(/Hace\s+(\d+)\s*(segundo|segundos|seg|minuto|minutos|min|hora|horas|h)\b/i);
+    if (m) {
+      const amount = Number(m[1]);
+      const unit = m[2].toLowerCase();
+      let multiplier = 60 * 1000; // minutos por defecto
+      if (/^seg/.test(unit)) multiplier = 1000;
+      else if (/^h/.test(unit)) multiplier = 60 * 60 * 1000;
+      return formatDdMmYyyyHhMm(new Date(Date.now() - amount * multiplier));
+    }
+
+    // "<día de la semana> HH:MM:SS" — se resuelve como la ocurrencia pasada
+    // más reciente de ese día (hoy mismo si coincide y la hora ya pasó).
+    m = s.match(/(domingo|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado)\s+(\d{1,2}):(\d{2}):(\d{2})/i);
+    if (m) {
+      const target = WEEKDAY_INDEX[m[1].toLowerCase()];
+      if (target === undefined) return "";
+      const now = new Date();
+      const d = new Date(now);
+      d.setHours(Number(m[2]), Number(m[3]), Number(m[4]), 0);
+      let diff = now.getDay() - target;
+      if (diff < 0) diff += 7;
+      if (diff === 0 && d.getTime() > now.getTime()) diff = 7; // esa hora aún no ha llegado hoy: es de hace una semana
+      d.setDate(d.getDate() - diff);
+      return formatDdMmYyyyHhMm(d);
+    }
+
+    return "";
   }
 
   function parseOrderDateMs(dateText) {
@@ -613,6 +665,28 @@
     return { lines, raw: lines.join(" | "), cardRect: { left: Math.round(cr.left), top: Math.round(cr.top), width: Math.round(cr.width), height: Math.round(cr.height) } };
   }
 
+  // Busca la fecha del pedido en las líneas ya separadas de la tarjeta (no
+  // en el texto completo unido): así nunca se puede confundir con un "Plazo
+  // de entrega: DD/MM/AAAA HH:mm:ss" (fecha límite de envío) que aparece en
+  // otra frase más larga de la misma tarjeta — visto en producción como
+  // causa real de pedidos guardados con fecha varios días en el futuro. La
+  // fecha real del pedido, cuando existe en pantalla, aparece como línea
+  // propia tras el split de collectRowText.
+  function extractOrderDateRaw(lines) {
+    for (const l of lines) {
+      if (/^\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}(?::\d{2})?$/.test(l)) return l;
+    }
+    for (const l of lines) {
+      const m = l.match(/Hace\s+\d+\s*(?:segundo|segundos|seg|minuto|minutos|min|hora|horas|h)\b/i);
+      if (m) return m[0];
+    }
+    for (const l of lines) {
+      const m = l.match(/(?:domingo|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado)\s+\d{1,2}:\d{2}:\d{2}/i);
+      if (m) return m[0];
+    }
+    return "";
+  }
+
   function parseCard(lines, raw) {
     const joined = norm(raw || lines.join(" "));
     const orderId = (joined.match(/(?:ID\s*de\s*pedido\s*:?)?\s*(\d{15,})/i) || [])[1] || "";
@@ -638,7 +712,7 @@
       if (m) customer = norm(m[1]);
     }
 
-    const date = (joined.match(/(\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}(?::\d{2})?)/) || [])[1] || "";
+    const date = extractOrderDateRaw(lines);
 
     let price = "";
     const badPriceContext = /GMV|Comisi[oó]n|espectadores|ventas|art[ií]culos|Resumen|Cancelaci[oó]n|reembolso|env[ií]o\s+en\s+24/i;
