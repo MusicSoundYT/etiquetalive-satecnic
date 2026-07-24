@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.41";
+  const VERSION = "el-1.6.42";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const DEFAULT_CONFIG = {
     apiBase: API_BASE,
@@ -557,7 +557,7 @@
       if (r.width < 160 || r.height > 160) continue;
       const txt = getText(el);
       if (!txt || txt.length > 450) continue;
-      const hasOrder = /ID\s*de\s*pedido\s*:?\s*\d{12,}/i.test(txt) || (/\b\d{15,}\b/.test(txt) && /\bSubasta\b/i.test(txt));
+      const hasOrder = /ID\s*de\s*pedido\s*:?\s*\d{12,}/i.test(txt) || (/\b\d{15,}\b/.test(txt) && /(?:\bSubasta\b|Sorteo\s+LIVE)/i.test(txt));
       if (hasOrder) out.push(el);
     }
     return out;
@@ -690,15 +690,20 @@
   function parseCard(lines, raw) {
     const joined = norm(raw || lines.join(" "));
     const orderId = (joined.match(/(?:ID\s*de\s*pedido\s*:?)?\s*(\d{15,})/i) || [])[1] || "";
-    const hasSubasta = /\bSubasta\b/i.test(joined);
-    if (!orderId || !hasSubasta) return null;
+    const isSubasta = /\bSubasta\b/i.test(joined);
+    // "Sorteo LIVE": mismo flujo de detección/etiqueta que una subasta, pero
+    // con importe 0€ válido (no es un fallo de parseo si un sorteo no tiene
+    // precio: es su comportamiento normal).
+    const isSorteo = /\bSorteo\s+LIVE\b/i.test(joined);
+    if (!orderId || (!isSubasta && !isSorteo)) return null;
+    const orderType = isSorteo ? "Sorteo LIVE" : "Subasta";
 
     let customer = "";
-    const idxSub = lines.findIndex(l => /^Subasta$/i.test(l) || /\bSubasta\b/i.test(l));
+    const idxSub = lines.findIndex(l => /^(?:Subasta(?:\s+LIVE)?|Sorteo\s+LIVE)$/i.test(l) || /(?:\bSubasta\b|Sorteo\s+LIVE)/i.test(l));
     if (idxSub >= 0) {
       for (let i = idxSub + 1; i < Math.min(lines.length, idxSub + 16); i++) {
         const l = lines[i];
-        if (!l || /Iniciar chat/i.test(l) || /^España$/i.test(l) || /^Subasta(\s+LIVE)?$/i.test(l) || /^LIVE$/i.test(l) || /Hace\s+\d+/i.test(l) || /^\d+\s*(min|hora|segundo)/i.test(l)) continue;
+        if (!l || /Iniciar chat/i.test(l) || /^España$/i.test(l) || /^(?:Subasta(?:\s+LIVE)?|Sorteo\s+LIVE)$/i.test(l) || /^LIVE$/i.test(l) || /Hace\s+\d+/i.test(l) || /^\d+\s*(min|hora|segundo)/i.test(l)) continue;
         if (/\d{1,2}\/\d{1,2}\/\d{4}/.test(l)) continue;
         if (/^\d{1,6}(?:[,.]\d{1,2})?\s*€$/.test(l)) continue;
         if (/ID\s*de\s*pedido/i.test(l) || /^\d{15,}$/.test(l)) continue;
@@ -708,12 +713,15 @@
       }
     }
     if (!customer) {
-      const m = joined.match(/Subasta\s+(.+?)\s+Iniciar\s+chat/i);
+      const m = joined.match(/(?:Subasta|Sorteo\s+LIVE)\s+(.+?)\s+Iniciar\s+chat/i);
       if (m) customer = norm(m[1]);
     }
 
     const date = extractOrderDateRaw(lines);
 
+    // Un sorteo con importe 0€ es válido: "0 €" cumple igualmente este
+    // patrón (\d{1,6} incluye "0"), así que no hace falta ningún caso
+    // especial aparte para que se detecte como precio real.
     let price = "";
     const badPriceContext = /GMV|Comisi[oó]n|espectadores|ventas|art[ií]culos|Resumen|Cancelaci[oó]n|reembolso|env[ií]o\s+en\s+24/i;
     const priceCandidates = [];
@@ -726,7 +734,7 @@
         let score = 1;
         if (/Tarjeta|cr[eé]dito|d[eé]bito|Apple\s+Pay|Paypal/i.test(context)) score += 20;
         if (/Pendiente\s+de\s+env[ií]o|Env[ií]o\s+est[aá]ndar/i.test(context)) score += 5;
-        if (/Subasta/i.test(context)) score += 2;
+        if (/(?:Subasta|Sorteo\s+LIVE)/i.test(context)) score += 2;
         priceCandidates.push({ value: p, score, context });
       }
     }
@@ -736,7 +744,7 @@
     }
 
     const complete = Boolean(orderId && customer && date && price);
-    return { orderId, customer, price, orderDate: date, type: "Subasta", complete };
+    return { orderId, customer, price, orderDate: date, type: orderType, complete };
   }
 
   function scan(reason) {
@@ -756,7 +764,10 @@
         const raw = row.raw;
         const orderId = (raw.match(/(?:ID\s*de\s*pedido\s*:?)?\s*(\d{15,})/i) || [])[1] || headers[i].orderId;
         if (!orderId) continue;
-        const hasSubasta = /\bSubasta\b/i.test(raw);
+        // Se mantiene el nombre "hasSubasta" por compatibilidad con el resto
+        // del archivo y con order_scan_log, pero también es true para
+        // pedidos de "Sorteo LIVE" (mismo flujo de detección/etiqueta).
+        const hasSubasta = /(?:\bSubasta\b|Sorteo\s+LIVE)/i.test(raw);
         const parsed = parseCard(row.lines, raw);
         const rect = h.getBoundingClientRect();
         cards.push({
