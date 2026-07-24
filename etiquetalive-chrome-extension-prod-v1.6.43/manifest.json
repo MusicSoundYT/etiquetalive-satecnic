@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
   "name": "EtiquetaLive by AIN",
-  "version": "1.6.42",
+  "version": "1.6.43",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0bv9CYNUVvdwBuRSJrbKJystIyp2FI2wahc3RTOueXVOy8a8IpYlI62UnZ/3cxKhQWbfoQ+JfJpEsdBo25YP5tmfWRSwvTiswy6Gu3hU2yhCF1OeeUhguOwUr+eLivnTm9kdsgrkhH5tk8JTsTnjAj521vQLSkGfgfgBx2UXAAM2469V3rjq/b/8OMndE+zC2cGz0oiIT6dZDPC/A6UUk2NS9/4IL4Wc2zYehYb0frZChsxmfSI0Lrf3sekavi8fwA6mAQdV4SbxJ0O2GlUvCP0fZDpL0qLoZxnfoblAynEvh4UvKusySQF3OuCbzGDnVfrHTNyByceRABLYlb/LFQIDAQAB",
   "description": "Impresión automática de etiquetas para pedidos TikTok Shop — by AIN TRADING HK LTD",
   "icons": {
     "128": "icon128.png"
