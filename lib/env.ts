@@ -21,6 +21,14 @@ export const env = {
   },
 } as const;
 
+export function requireTikTokShopEnv() {
+  return {
+    appKey: required("TIKTOK_APP_KEY"),
+    appSecret: required("TIKTOK_APP_SECRET"),
+    serviceId: required("TIKTOK_SERVICE_ID"),
+  };
+}
+
 export function requireStripeEnv() {
   return {
     secretKey: required("STRIPE_SECRET_KEY"),

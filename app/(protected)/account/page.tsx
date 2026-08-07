@@ -4,10 +4,20 @@ import { ProfileForm } from "@/components/profile-form";
 import { ApiKeyPanel } from "@/components/api-key-panel";
 import { ExtensionSettingsPanel } from "@/components/extension-settings-panel";
 import { MfaPanel } from "@/components/mfa-panel";
+import { TikTokShopPanel } from "@/components/tiktok-shop-panel";
+import { getConnectionForTenant, getShopsForConnection } from "@/lib/tiktok-shop/connection";
 import { ChangePasswordForm } from "./change-password-form";
 
-export default async function AccountPage() {
+export default async function AccountPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tiktok?: string }>;
+}) {
   const user = await requireSession();
+  const { tiktok: tiktokStatus } = await searchParams;
+
+  const tiktokConnection = user.tenant_id ? await getConnectionForTenant(user.tenant_id) : null;
+  const tiktokShops = tiktokConnection ? await getShopsForConnection(tiktokConnection.id) : [];
 
   const { data: balance } = await supabaseAdmin
     .from("user_balances")
@@ -110,6 +120,13 @@ export default async function AccountPage() {
           Configuración de la extensión
         </h2>
         <ExtensionSettingsPanel />
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+          API oficial de TikTok Shop
+        </h2>
+        <TikTokShopPanel connection={tiktokConnection} shops={tiktokShops} initialStatus={tiktokStatus} />
       </section>
 
       <section>
