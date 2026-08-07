@@ -112,12 +112,15 @@ export async function searchOrders(
 /**
  * Suscribe (o actualiza, es idempotente) el aviso de cambio de estado de
  * pedido para esta tienda. address debe ser HTTPS y responder rápido.
+ * shop_cipher es obligatorio: sin él la API no sabe a qué tienda te refieres
+ * (confirmado en producción: error 106013 "Missing identifier" sin este dato).
  */
-export async function registerOrderStatusWebhook(accessToken: string, address: string): Promise<void> {
+export async function registerOrderStatusWebhook(accessToken: string, shopCipher: string, address: string): Promise<void> {
   await callApi<unknown>({
     method: "PUT",
     path: "/event/202309/webhooks",
     accessToken,
+    query: { shop_cipher: shopCipher },
     bodyString: JSON.stringify({ address, event_type: "ORDER_STATUS_CHANGE" }),
   });
 }
@@ -125,11 +128,12 @@ export async function registerOrderStatusWebhook(accessToken: string, address: s
 export type TikTokWebhookSubscription = { address: string; event_type: string };
 
 /** Webhooks activos actualmente registrados para esta tienda. */
-export async function listRegisteredWebhooks(accessToken: string): Promise<TikTokWebhookSubscription[]> {
+export async function listRegisteredWebhooks(accessToken: string, shopCipher: string): Promise<TikTokWebhookSubscription[]> {
   const data = await callApi<{ webhooks: TikTokWebhookSubscription[] }>({
     method: "GET",
     path: "/event/202309/webhooks",
     accessToken,
+    query: { shop_cipher: shopCipher },
   });
   return data.webhooks ?? [];
 }

@@ -91,13 +91,16 @@ async function refreshShopsList(connectionId: string, accessToken: string): Prom
   // la impresión automática por API (sin esto, solo se puede ver/imprimir a
   // mano desde Pedidos (API)). Es idempotente (volver a registrar la misma
   // URL no duplica nada), así que se repite en cada conexión/renovación sin
-  // problema. Si falla (p. ej. en local, sin HTTPS pública), no debe romper
-  // el resto de la conexión — se queda sin auto-impresión hasta que se
-  // pueda registrar, pero conectar/ver pedidos sigue funcionando.
-  try {
-    await registerOrderStatusWebhook(accessToken, `${env.appUrl}/api/tiktok/webhooks`);
-  } catch (err) {
-    console.error("[TikTok Shop] No se pudo registrar el webhook de pedidos:", err);
+  // problema. Hay que registrarlo por cada tienda (shop_cipher), no una vez
+  // por conexión. Si falla (p. ej. en local, sin HTTPS pública), no debe
+  // romper el resto de la conexión — se queda sin auto-impresión hasta que
+  // se pueda registrar, pero conectar/ver pedidos sigue funcionando.
+  for (const shop of shops) {
+    try {
+      await registerOrderStatusWebhook(accessToken, shop.cipher, `${env.appUrl}/api/tiktok/webhooks`);
+    } catch (err) {
+      console.error("[TikTok Shop] No se pudo registrar el webhook de pedidos:", err);
+    }
   }
 }
 

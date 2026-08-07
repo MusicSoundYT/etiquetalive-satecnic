@@ -10,7 +10,13 @@ export async function GET() {
 
   try {
     const connection = await getValidAccessToken(user.tenant_id);
-    const webhooks = await listRegisteredWebhooks(connection.access_token);
+    const shops = await getShopsForConnection(connection.id);
+    if (!shops.length) return NextResponse.json({ active: false, webhooks: [] });
+
+    // Con Fase 1 solo hay una tienda por conexión en la práctica — se
+    // comprueba con la primera. Si en el futuro hay más de una, esto habría
+    // que revisarlo por tienda.
+    const webhooks = await listRegisteredWebhooks(connection.access_token, shops[0].shop_cipher);
     const active = webhooks.some(
       (w) => w.event_type === "ORDER_STATUS_CHANGE" && w.address === `${env.appUrl}/api/tiktok/webhooks`
     );
@@ -39,7 +45,9 @@ export async function POST() {
     const shops = await getShopsForConnection(connection.id);
     if (!shops.length) return NextResponse.json({ error: "No hay ninguna tienda conectada." }, { status: 404 });
 
-    await registerOrderStatusWebhook(connection.access_token, `${env.appUrl}/api/tiktok/webhooks`);
+    for (const shop of shops) {
+      await registerOrderStatusWebhook(connection.access_token, shop.shop_cipher, `${env.appUrl}/api/tiktok/webhooks`);
+    }
     return NextResponse.json({ status: "ok", address: `${env.appUrl}/api/tiktok/webhooks` });
   } catch (err) {
     console.error("[TikTok Shop] Error registrando el webhook manualmente:", err);
