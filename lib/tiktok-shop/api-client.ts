@@ -63,27 +63,41 @@ export async function getAuthorizedShops(accessToken: string): Promise<TikTokAut
   return data.shops;
 }
 
+export type TikTokOrder = {
+  id: string;
+  order_type: string;
+  status: string;
+  create_time: number;
+  update_time: number;
+  payment?: { total_amount?: string; currency?: string };
+  recipient_address?: { name?: string; first_name?: string; last_name?: string };
+  line_items?: Array<{ product_id?: string; product_name?: string; sale_price?: string; currency?: string }>;
+};
+
 export type TikTokOrderSearchResult = {
-  orders: Array<Record<string, unknown>>;
+  orders: TikTokOrder[];
   next_page_token?: string;
   total_count?: number;
 };
 
 /**
- * Búsqueda de pedidos de una tienda. Sin filtros en el cuerpo, esto trae
- * los más recientes — suficiente para la prueba de "¿vemos los pedidos?"
- * de la Fase 1.
+ * Búsqueda de pedidos de una tienda. La API no permite filtrar por
+ * order_type en el propio buscador (se probó: lo ignora en silencio), así
+ * que quien filtre por "AUCTION" tiene que hacerlo después, sobre lo que
+ * devuelve esta función.
  */
 export async function searchOrders(
   accessToken: string,
   shopCipher: string,
-  opts: { pageSize?: number; pageToken?: string } = {}
+  opts: { pageSize?: number; pageToken?: string; sortField?: "create_time" | "update_time"; sortOrder?: "ASC" | "DESC" } = {}
 ): Promise<TikTokOrderSearchResult> {
   const query: Record<string, string> = {
     shop_cipher: shopCipher,
     page_size: String(opts.pageSize ?? 20),
   };
   if (opts.pageToken) query.page_token = opts.pageToken;
+  if (opts.sortField) query.sort_field = opts.sortField;
+  if (opts.sortOrder) query.sort_order = opts.sortOrder;
 
   const bodyString = JSON.stringify({});
   return callApi<TikTokOrderSearchResult>({
@@ -93,4 +107,15 @@ export async function searchOrders(
     query,
     bodyString,
   });
+}
+
+/** Detalle completo de uno o varios pedidos (hasta 50 ids por llamada). */
+export async function getOrderDetails(accessToken: string, shopCipher: string, orderIds: string[]): Promise<TikTokOrder[]> {
+  const data = await callApi<{ orders: TikTokOrder[] }>({
+    method: "GET",
+    path: "/order/202507/orders",
+    accessToken,
+    query: { shop_cipher: shopCipher, ids: orderIds.join(",") },
+  });
+  return data.orders;
 }

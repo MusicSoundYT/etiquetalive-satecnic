@@ -56,6 +56,13 @@ export function AccountMenu({
             Pedidos
           </Link>
           <Link
+            href="/pedidos-api"
+            className="block px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            onClick={() => setOpen(false)}
+          >
+            Pedidos (API)
+          </Link>
+          <Link
             href="/templates"
             className="block px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
             onClick={() => setOpen(false)}
