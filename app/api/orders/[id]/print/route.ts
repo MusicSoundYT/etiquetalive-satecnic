@@ -42,8 +42,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     case "already_charged":
       return NextResponse.json({ order, charged: false, reason: "already_charged_first_print" });
     case "demo":
+      await markLabelDelivered(order.id);
       return NextResponse.json({ order: result.order, charged: false, reason: "demo_account", priceCents: 0 });
     case "charged":
+      await markLabelDelivered(order.id);
       return NextResponse.json({ order: result.order, charged: true, priceCents: result.priceCents });
   }
+}
+
+// Este endpoint solo lo llama un navegador que va a imprimir la etiqueta a
+// continuación (Dashboard o Pedidos (API)) — se marca aquí mismo como
+// "entregada" para que el sondeo automático de Pedidos (API)
+// (/api/tiktok/pending-print) no la vuelva a coger y la imprima otra vez.
+async function markLabelDelivered(orderId: string): Promise<void> {
+  await supabaseAdmin
+    .from("orders")
+    .update({ label_delivered_at: new Date().toISOString() })
+    .eq("id", orderId)
+    .is("label_delivered_at", null);
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { buttonClass, ErrorText } from "@/components/auth-shell";
 
 type Shop = {
@@ -38,8 +38,36 @@ export function TikTokShopPanel({
   const [testResult, setTestResult] = useState<{
     shops: { shop: string; totalCount: number | null; orders: Record<string, unknown>[] }[];
   } | null>(null);
+  const [webhookActive, setWebhookActive] = useState<boolean | null>(null);
+  const [registering, setRegistering] = useState(false);
+  const [webhookError, setWebhookError] = useState<string | null>(null);
 
   const statusMsg = initialStatus ? STATUS_MESSAGES[initialStatus] : null;
+
+  useEffect(() => {
+    if (!connection) return;
+    fetch("/api/tiktok/register-webhook")
+      .then((res) => res.json())
+      .then((data) => setWebhookActive(Boolean(data.active)))
+      .catch(() => setWebhookActive(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleRegisterWebhook() {
+    setRegistering(true);
+    setWebhookError(null);
+    try {
+      const res = await fetch("/api/tiktok/register-webhook", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setWebhookError(data.error ?? "No se pudo activar la impresión automática.");
+        return;
+      }
+      setWebhookActive(true);
+    } finally {
+      setRegistering(false);
+    }
+  }
 
   async function handleDisconnect() {
     if (!confirm("¿Desconectar TikTok Shop? Tendrás que volver a autorizar la app para reconectarlo.")) return;
@@ -121,6 +149,32 @@ export function TikTokShopPanel({
                 No se ha detectado ninguna tienda autorizada todavía.
               </p>
             )}
+            <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+              {webhookActive === null && (
+                <p className="text-xs text-zinc-400 dark:text-zinc-500">Comprobando impresión automática…</p>
+              )}
+              {webhookActive === true && (
+                <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                  🟢 Impresión automática por API activa: los pedidos de subasta se cobran solos en
+                  cuanto TikTok los notifica.
+                </p>
+              )}
+              {webhookActive === false && (
+                <div>
+                  <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">
+                    La impresión automática por API no está activada todavía.
+                  </p>
+                  <button
+                    onClick={handleRegisterWebhook}
+                    disabled={registering}
+                    className="rounded border border-zinc-300 px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    {registering ? "Activando…" : "Activar impresión automática"}
+                  </button>
+                  <ErrorText message={webhookError} />
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex gap-2">

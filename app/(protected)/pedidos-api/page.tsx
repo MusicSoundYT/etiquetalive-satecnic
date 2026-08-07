@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/auth/require-session";
 import { getConnectionForTenant } from "@/lib/tiktok-shop/connection";
 import { listAuctionOrders } from "@/lib/tiktok-shop/auction-orders";
 import { TikTokOrdersTable } from "@/components/tiktok-orders-table";
+import { TikTokPrintWatcher } from "@/components/tiktok-print-watcher";
 
 export default async function PedidosApiPage() {
   const user = await requireSession();
@@ -37,7 +38,10 @@ export default async function PedidosApiPage() {
       )}
 
       {connection && (
-        <TikTokOrdersTable initialOrders={initial.orders} initialNextPageToken={initial.nextPageToken} />
+        <>
+          <TikTokPrintWatcher />
+          <TikTokOrdersTable initialOrders={initial.orders} initialNextPageToken={initial.nextPageToken} />
+        </>
       )}
     </div>
   );

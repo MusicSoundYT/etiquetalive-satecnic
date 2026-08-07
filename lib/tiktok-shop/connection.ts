@@ -1,7 +1,8 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { env } from "@/lib/env";
 import { exchangeAuthCode, refreshAccessToken, type TikTokTokenData } from "@/lib/tiktok-shop/auth";
-import { getAuthorizedShops } from "@/lib/tiktok-shop/api-client";
+import { getAuthorizedShops, registerOrderStatusWebhook } from "@/lib/tiktok-shop/api-client";
 
 // Margen antes de que caduque el access_token (dura 7 días) para renovarlo
 // ya, en vez de esperar a que falle una llamada real.
@@ -84,6 +85,19 @@ async function refreshShopsList(connectionId: string, accessToken: string): Prom
       },
       { onConflict: "connection_id,shop_id" }
     );
+  }
+
+  // Suscripción al aviso de cambio de estado de pedido — es lo que permite
+  // la impresión automática por API (sin esto, solo se puede ver/imprimir a
+  // mano desde Pedidos (API)). Es idempotente (volver a registrar la misma
+  // URL no duplica nada), así que se repite en cada conexión/renovación sin
+  // problema. Si falla (p. ej. en local, sin HTTPS pública), no debe romper
+  // el resto de la conexión — se queda sin auto-impresión hasta que se
+  // pueda registrar, pero conectar/ver pedidos sigue funcionando.
+  try {
+    await registerOrderStatusWebhook(accessToken, `${env.appUrl}/api/tiktok/webhooks`);
+  } catch (err) {
+    console.error("[TikTok Shop] No se pudo registrar el webhook de pedidos:", err);
   }
 }
 

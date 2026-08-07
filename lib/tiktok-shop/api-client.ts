@@ -109,6 +109,31 @@ export async function searchOrders(
   });
 }
 
+/**
+ * Suscribe (o actualiza, es idempotente) el aviso de cambio de estado de
+ * pedido para esta tienda. address debe ser HTTPS y responder rápido.
+ */
+export async function registerOrderStatusWebhook(accessToken: string, address: string): Promise<void> {
+  await callApi<unknown>({
+    method: "PUT",
+    path: "/event/202309/webhooks",
+    accessToken,
+    bodyString: JSON.stringify({ address, event_type: "ORDER_STATUS_CHANGE" }),
+  });
+}
+
+export type TikTokWebhookSubscription = { address: string; event_type: string };
+
+/** Webhooks activos actualmente registrados para esta tienda. */
+export async function listRegisteredWebhooks(accessToken: string): Promise<TikTokWebhookSubscription[]> {
+  const data = await callApi<{ webhooks: TikTokWebhookSubscription[] }>({
+    method: "GET",
+    path: "/event/202309/webhooks",
+    accessToken,
+  });
+  return data.webhooks ?? [];
+}
+
 /** Detalle completo de uno o varios pedidos (hasta 50 ids por llamada). */
 export async function getOrderDetails(accessToken: string, shopCipher: string, orderIds: string[]): Promise<TikTokOrder[]> {
   const data = await callApi<{ orders: TikTokOrder[] }>({
