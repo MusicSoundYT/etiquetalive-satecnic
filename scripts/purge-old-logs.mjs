@@ -15,12 +15,28 @@ const RETENTION_DAYS = 15;
 const BATCH_SIZE = 20_000;
 const PAUSE_MS = 200;
 
-async function deleteInBatches(client, label, deleteOneBatchSql) {
+// Borra por lotes, pasando los IDs del lote como array (requiere índice en
+// la columna de fecha o en id, según la consulta) en vez de subconsultas
+// anidadas — con una tabla de varios millones de filas, una subconsulta sin
+// índice de apoyo puede acabar escaneándola entera en cada lote.
+async function purgeTable(client, { table, dateColumn, label }) {
   let total = 0;
   for (;;) {
-    const { rowCount } = await client.query(deleteOneBatchSql);
+    const { rows } = await client.query(
+      `SELECT id FROM ${table} WHERE ${dateColumn} < now() - interval '${RETENTION_DAYS} days' LIMIT ${BATCH_SIZE}`
+    );
+    if (!rows.length) break;
+    const ids = rows.map((r) => r.id);
+
+    if (table === "auction_events_v2") {
+      // duplicate_of referencia a la propia tabla — hay que desligar antes
+      // de borrar, si no la FK rechaza el DELETE.
+      await client.query(`UPDATE auction_events_v2 SET duplicate_of = NULL WHERE duplicate_of = ANY($1)`, [ids]);
+    }
+
+    const { rowCount } = await client.query(`DELETE FROM ${table} WHERE id = ANY($1)`, [ids]);
     total += rowCount;
-    if (rowCount < BATCH_SIZE) break;
+    if (rows.length < BATCH_SIZE) break;
     await new Promise((r) => setTimeout(r, PAUSE_MS));
   }
   console.log(`[${new Date().toISOString()}] ${label}: ${total} filas borradas.`);
@@ -35,41 +51,8 @@ async function main() {
   await client.connect();
 
   try {
-    // auction_events_v2.duplicate_of referencia a la propia tabla — si no se
-    // rompe antes ese enlace, borrar una fila antigua a la que todavía
-    // apunte una fila reciente fallaría por la FK. También por lotes.
-    let brokenLinks = 0;
-    for (;;) {
-      const { rowCount } = await client.query(
-        `UPDATE auction_events_v2 SET duplicate_of = NULL
-         WHERE id IN (
-           SELECT id FROM auction_events_v2
-           WHERE duplicate_of IN (
-             SELECT id FROM auction_events_v2 WHERE detected_at < now() - interval '${RETENTION_DAYS} days'
-           )
-           LIMIT ${BATCH_SIZE}
-         )`
-      );
-      brokenLinks += rowCount;
-      if (rowCount < BATCH_SIZE) break;
-      await new Promise((r) => setTimeout(r, PAUSE_MS));
-    }
-    if (brokenLinks) console.log(`[${new Date().toISOString()}] Enlaces duplicate_of desligados: ${brokenLinks}`);
-
-    await deleteInBatches(
-      client,
-      "auction_events_v2",
-      `DELETE FROM auction_events_v2 WHERE id IN (
-         SELECT id FROM auction_events_v2 WHERE detected_at < now() - interval '${RETENTION_DAYS} days' LIMIT ${BATCH_SIZE}
-       )`
-    );
-    await deleteInBatches(
-      client,
-      "order_scan_log",
-      `DELETE FROM order_scan_log WHERE id IN (
-         SELECT id FROM order_scan_log WHERE captured_at < now() - interval '${RETENTION_DAYS} days' LIMIT ${BATCH_SIZE}
-       )`
-    );
+    await purgeTable(client, { table: "auction_events_v2", dateColumn: "detected_at", label: "auction_events_v2" });
+    await purgeTable(client, { table: "order_scan_log", dateColumn: "captured_at", label: "order_scan_log" });
   } finally {
     await client.end();
   }
