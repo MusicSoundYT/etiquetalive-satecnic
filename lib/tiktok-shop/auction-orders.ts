@@ -1,15 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getValidAccessToken, getShopsForConnection } from "@/lib/tiktok-shop/connection";
-import { searchOrders, getOrderDetails, type TikTokOrder } from "@/lib/tiktok-shop/api-client";
-
-// La búsqueda de pedidos de TikTok no admite filtrar por order_type (se
-// comprobó contra la API real: lo ignora en silencio), así que hay que
-// pedir páginas normales e ir descartando las que no sean "AUCTION" hasta
-// reunir suficientes. Este tope evita un escaneo sin fin si hay muy pocas
-// subastas entre muchísimos pedidos normales.
-const MAX_PAGES_PER_SCAN = 15;
-const PAGE_SIZE = 100;
+import { getOrderDetails, type TikTokOrder } from "@/lib/tiktok-shop/api-client";
 
 export type AuctionOrderRow = {
   tiktokOrderId: string;
@@ -41,84 +33,61 @@ function priceCentsFromOrder(order: TikTokOrder): number {
   return Math.round((Number.isFinite(amount) ? amount : 0) * 100);
 }
 
-function toAuctionRow(order: TikTokOrder): AuctionOrderRow {
-  return {
-    tiktokOrderId: order.id,
-    status: order.status,
-    createTime: order.create_time,
-    priceCents: priceCentsFromOrder(order),
-    currency: order.payment?.currency ?? "EUR",
-    cliente: clienteFromOrder(order),
-    productName: order.line_items?.[0]?.product_name ?? "",
-    local: null,
-  };
-}
-
 /**
- * Trae pedidos de tipo "AUCTION" (subasta), más recientes primero,
- * paginando sobre la búsqueda normal de TikTok y filtrando aquí. Devuelve
- * como mucho una tanda (no todos los que haya) — para más, se sigue
- * pidiendo con el pageToken devuelto.
+ * Trae pedidos de tipo "AUCTION" (subasta), más recientes primero.
+ *
+ * OJO: esto NO llama a la búsqueda de pedidos de TikTok (searchOrders) — se
+ * comprobó contra la API real que su índice va varios días por detrás (un
+ * pedido de hoy tardaba +2 días en aparecer ahí), así que devolvía siempre
+ * una lista desactualizada aunque se preguntara constantemente. En cambio,
+ * el pedido por ID concreto (getOrderDetails, el mismo que usa el webhook de
+ * ORDER_STATUS_CHANGE) sí es instantáneo — por eso cada pedido de subasta ya
+ * queda guardado en nuestra propia tabla "orders" en el momento en que llega
+ * su primer webhook (ensureLocalOrder). Así que la forma fiable de listar
+ * "los pedidos de subasta recientes" es leer directamente de ahí, no volver
+ * a preguntarle a TikTok.
  */
 export async function listAuctionOrders(
   tenantId: string,
   opts: { pageToken?: string; targetCount?: number } = {}
 ): Promise<{ orders: AuctionOrderRow[]; nextPageToken: string | null }> {
   const targetCount = opts.targetCount ?? 20;
-  const connection = await getValidAccessToken(tenantId);
-  const shops = await getShopsForConnection(connection.id);
-  if (!shops.length) return { orders: [], nextPageToken: null };
-  // Fase 1: una sola tienda por conexión en la práctica — se usa la primera.
-  const shop = shops[0];
+  const offset = opts.pageToken ? Number(opts.pageToken) || 0 : 0;
 
-  const matched: TikTokOrder[] = [];
-  let pageToken = opts.pageToken;
-  let pagesScanned = 0;
-
-  while (matched.length < targetCount && pagesScanned < MAX_PAGES_PER_SCAN) {
-    const result = await searchOrders(connection.access_token, shop.shop_cipher, {
-      pageSize: PAGE_SIZE,
-      pageToken,
-      sortField: "create_time",
-      sortOrder: "DESC",
-    });
-    pagesScanned++;
-    for (const order of result.orders) {
-      if (order.order_type === "AUCTION") matched.push(order);
-    }
-    pageToken = result.next_page_token;
-    if (!pageToken) break;
-  }
-
-  const rows = matched.slice(0, targetCount).map(toAuctionRow);
-  await attachLocalOrders(tenantId, rows);
-
-  return { orders: rows, nextPageToken: pageToken ?? null };
-}
-
-/** Rellena "local" para las filas que ya existan en nuestra tabla orders (por external_order_id). */
-async function attachLocalOrders(tenantId: string, rows: AuctionOrderRow[]): Promise<void> {
-  if (!rows.length) return;
-  const ids = rows.map((r) => r.tiktokOrderId);
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("orders")
-    .select("id, tk, external_order_id, notes, estado_impresion, impresiones_cobrables")
+    .select(
+      "id, tk, external_order_id, cliente, precio_cents, moneda, fecha_pedido, fecha_detectado, notes, estado_impresion, impresiones_cobrables, raw_payload"
+    )
     .eq("tenant_id", tenantId)
-    .in("external_order_id", ids);
+    .eq("raw_payload->>source", "tiktok_shop_api")
+    .order("fecha_pedido", { ascending: false, nullsFirst: false })
+    .range(offset, offset + targetCount - 1);
 
-  const byExternalId = new Map((data ?? []).map((o) => [o.external_order_id as string, o]));
-  for (const row of rows) {
-    const match = byExternalId.get(row.tiktokOrderId);
-    if (match) {
-      row.local = {
-        id: match.id,
-        tk: match.tk,
-        notes: match.notes,
-        estado_impresion: match.estado_impresion,
-        impresiones_cobrables: match.impresiones_cobrables,
-      };
-    }
-  }
+  if (error) throw new Error(`No se pudieron listar los pedidos de subasta: ${error.message}`);
+
+  const rows: AuctionOrderRow[] = (data ?? []).map((o) => {
+    const payload = (o.raw_payload ?? {}) as { status?: string };
+    return {
+      tiktokOrderId: o.external_order_id as string,
+      status: payload.status ?? "UNPAID",
+      createTime: Math.floor(new Date((o.fecha_pedido as string) ?? (o.fecha_detectado as string)).getTime() / 1000),
+      priceCents: o.precio_cents as number,
+      currency: (o.moneda as string) ?? "EUR",
+      cliente: o.cliente as string,
+      productName: "",
+      local: {
+        id: o.id as string,
+        tk: o.tk as string,
+        notes: o.notes as string | null,
+        estado_impresion: o.estado_impresion as string,
+        impresiones_cobrables: o.impresiones_cobrables as number,
+      },
+    };
+  });
+
+  const nextPageToken = rows.length === targetCount ? String(offset + rows.length) : null;
+  return { orders: rows, nextPageToken };
 }
 
 /**
@@ -129,7 +98,12 @@ async function attachLocalOrders(tenantId: string, rows: AuctionOrderRow[]): Pro
  */
 export async function ensureLocalOrder(
   tenantId: string,
-  tiktokOrderId: string
+  tiktokOrderId: string,
+  // Si quien llama ya ha pedido este pedido a TikTok hace un momento (el
+  // webhook lo hace para comprobar order_type antes de llegar aquí), se
+  // reutiliza en vez de volver a pedirlo — evita duplicar la llamada a la
+  // API de TikTok en cada aviso de webhook.
+  prefetchedOrder?: TikTokOrder
 ): Promise<{ id: string; tk: string }> {
   const { data: existing } = await supabaseAdmin
     .from("orders")
@@ -137,14 +111,28 @@ export async function ensureLocalOrder(
     .eq("tenant_id", tenantId)
     .eq("external_order_id", tiktokOrderId)
     .maybeSingle();
-  if (existing) return existing as { id: string; tk: string };
 
-  const connection = await getValidAccessToken(tenantId);
-  const shops = await getShopsForConnection(connection.id);
-  if (!shops.length) throw new Error("No hay ninguna tienda de TikTok Shop conectada.");
-
-  const [order] = await getOrderDetails(connection.access_token, shops[0].shop_cipher, [tiktokOrderId]);
+  let order = prefetchedOrder;
+  if (!order) {
+    const connection = await getValidAccessToken(tenantId);
+    const shops = await getShopsForConnection(connection.id);
+    if (!shops.length) throw new Error("No hay ninguna tienda de TikTok Shop conectada.");
+    [order] = await getOrderDetails(connection.access_token, shops[0].shop_cipher, [tiktokOrderId]);
+  }
   if (!order) throw new Error("No se encontró ese pedido en TikTok Shop.");
+
+  if (existing) {
+    // El pedido ya estaba dado de alta (de un webhook anterior) — se
+    // refresca igualmente su estado de TikTok (raw_payload.status), que si
+    // no se quedaría congelado en lo que fuera la primera vez que se vio
+    // este pedido, sin reflejar los cambios de estado (pagado, enviado,
+    // completado...) que van llegando en webhooks posteriores.
+    await supabaseAdmin
+      .from("orders")
+      .update({ raw_payload: { source: "tiktok_shop_api", order_type: order.order_type, status: order.status } })
+      .eq("id", existing.id);
+    return existing as { id: string; tk: string };
+  }
 
   const { data: tk } = await supabaseAdmin.rpc("next_tk", { p_tenant_id: tenantId });
 

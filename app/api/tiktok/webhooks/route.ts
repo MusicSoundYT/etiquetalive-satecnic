@@ -107,7 +107,7 @@ async function processOrderStatusChange(payload: TikTokOrderStatusChangePayload)
   const [order] = await getOrderDetails(connection.access_token, shop.shop_cipher, [orderId]);
   if (!order || order.order_type !== "AUCTION") return;
 
-  const local = await ensureLocalOrder(tenantId, orderId);
+  const local = await ensureLocalOrder(tenantId, orderId, order);
 
   const { data: fullOrder } = await supabaseAdmin
     .from("orders")
