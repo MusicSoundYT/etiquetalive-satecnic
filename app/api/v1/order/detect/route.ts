@@ -156,10 +156,26 @@ export async function POST(req: NextRequest) {
       .select("*")
       .single();
 
-    if (error || !created) {
+    if (error?.code === "23505") {
+      // Carrera: otra petición para el mismo pedido ganó por poco (misma
+      // comprobación de arriba, casi al mismo tiempo) — la restricción única
+      // de (tenant_id, external_order_id) lo bloquea aquí. No es un fallo:
+      // se recupera la fila que sí se creó, en vez de duplicarla.
+      const { data: winner } = await supabaseAdmin
+        .from("orders")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .eq("external_order_id", body.order_id)
+        .maybeSingle();
+      if (!winner) {
+        return withCors(req, NextResponse.json({ error: "No se pudo registrar el pedido." }, { status: 500 }));
+      }
+      order = winner;
+    } else if (error || !created) {
       return withCors(req, NextResponse.json({ error: "No se pudo registrar el pedido." }, { status: 500 }));
+    } else {
+      order = created;
     }
-    order = created;
   } else {
     // Reconciliación: un pedido ya detectado puede haberse guardado con
     // datos incompletos (p. ej. precio 0€ porque el scrapeo de esa pasada no

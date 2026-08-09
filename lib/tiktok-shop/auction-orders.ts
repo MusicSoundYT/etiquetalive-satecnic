@@ -150,6 +150,20 @@ export async function ensureLocalOrder(
     })
     .select("id, tk")
     .single();
+
+  if (error?.code === "23505") {
+    // Carrera con la extensión o con otro webhook casi simultáneo — la
+    // restricción única de (tenant_id, external_order_id) lo bloquea aquí.
+    // Se recupera la fila que sí se creó en vez de fallar.
+    const { data: winner } = await supabaseAdmin
+      .from("orders")
+      .select("id, tk")
+      .eq("tenant_id", tenantId)
+      .eq("external_order_id", tiktokOrderId)
+      .maybeSingle();
+    if (!winner) throw new Error("No se pudo registrar el pedido tras una carrera de creación.");
+    return winner as { id: string; tk: string };
+  }
   if (error || !created) throw new Error(`No se pudo registrar el pedido: ${error?.message}`);
 
   return created as { id: string; tk: string };
