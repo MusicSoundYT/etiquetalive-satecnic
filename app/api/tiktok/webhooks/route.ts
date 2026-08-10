@@ -92,6 +92,23 @@ async function processOrderStatusChange(payload: TikTokOrderStatusChangePayload)
   if (!connectionRow) return;
   const tenantId = connectionRow.tenant_id as string;
 
+  // ORDER_STATUS_CHANGE avisa de CUALQUIER cambio de estado del pedido
+  // (pagado, enviado, entregado, completado...), no solo de que se acaba de
+  // crear. Solo interesa la primera vez que vemos este pedido — si ya
+  // existe en nuestra tabla, es que TikTok ha tocado un pedido que ya
+  // conocíamos (p. ej. lo marca como "completado" semanas después de la
+  // subasta) y no debe cobrarse/imprimirse por eso. Se comprueba esto ANTES
+  // de gastar una llamada a la API de TikTok, no solo por eficiencia: es la
+  // regla de negocio real (confirmado con el cliente: solo pedidos nuevos
+  // de un directo en marcha, los cambios de estado posteriores no afectan).
+  const { data: existing } = await supabaseAdmin
+    .from("orders")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("external_order_id", orderId)
+    .maybeSingle();
+  if (existing) return;
+
   const { data: tenant } = await supabaseAdmin
     .from("tenants")
     .select("auto_print_enabled")
@@ -117,8 +134,8 @@ async function processOrderStatusChange(payload: TikTokOrderStatusChangePayload)
   if (!fullOrder) return;
 
   // claimAndChargePrint ya es idempotente (no cobra dos veces un pedido con
-  // impresiones_cobrables > 0), así que no hace falta comprobarlo aparte
-  // aquí: si la extensión ya lo había cobrado por su cuenta, esto no hace
-  // nada más.
+  // impresiones_cobrables > 0) — se mantiene como respaldo por si hubiera
+  // una carrera justo aquí, aunque la comprobación de "existing" de arriba
+  // ya cubre el caso normal.
   await claimAndChargePrint(fullOrder, tenantId);
 }
