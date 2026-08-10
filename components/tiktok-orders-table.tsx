@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { AuctionOrderRow } from "@/lib/tiktok-shop/auction-orders";
 
@@ -65,9 +65,14 @@ function printLabel(orderId: string) {
 export function TikTokOrdersTable({
   initialOrders,
   initialNextPageToken,
+  shopId,
 }: {
   initialOrders: AuctionOrderRow[];
   initialNextPageToken: string | null;
+  // Filtra a una sola tienda de TikTok cuando el tenant tiene varias
+  // conectadas. Si cambia (el usuario elige otra tienda en el selector), se
+  // vuelve a cargar la lista desde el principio para esa tienda.
+  shopId?: string | null;
 }) {
   const [orders, setOrders] = useState(initialOrders);
   const [nextPageToken, setNextPageToken] = useState(initialNextPageToken);
@@ -75,6 +80,23 @@ export function TikTokOrdersTable({
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  // La primera carga (initialOrders) ya viene filtrada por el servidor para
+  // este shopId — solo hay que recargar si el usuario cambia de tienda
+  // DESPUÉS del primer render, no en el propio montaje.
+  const mountedShopId = useRef(shopId);
+  useEffect(() => {
+    if (shopId === mountedShopId.current) return;
+    mountedShopId.current = shopId;
+    const query = shopId ? `?shop_id=${encodeURIComponent(shopId)}` : "";
+    fetch(`/api/tiktok/orders${query}`)
+      .then((res) => res.json())
+      .then((data) => {
+        setOrders(data.orders ?? []);
+        setNextPageToken(data.nextPageToken ?? null);
+      })
+      .catch(() => setActionError("No se pudieron cargar los pedidos de esta tienda."));
+  }, [shopId]);
 
   function showToast(message: string) {
     setToast(message);
@@ -89,7 +111,8 @@ export function TikTokOrdersTable({
     if (!nextPageToken) return;
     setLoadingMore(true);
     try {
-      const res = await fetch(`/api/tiktok/orders?page_token=${encodeURIComponent(nextPageToken)}`);
+      const shopParam = shopId ? `&shop_id=${encodeURIComponent(shopId)}` : "";
+      const res = await fetch(`/api/tiktok/orders?page_token=${encodeURIComponent(nextPageToken)}${shopParam}`);
       const data = await res.json();
       if (!res.ok) {
         setActionError(data.error ?? "No se pudieron cargar más pedidos.");

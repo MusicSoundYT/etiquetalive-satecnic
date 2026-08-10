@@ -5,6 +5,7 @@ import { getOrderDetails, type TikTokOrder } from "@/lib/tiktok-shop/api-client"
 
 export type AuctionOrderRow = {
   tiktokOrderId: string;
+  shopId: string | null;
   status: string;
   createTime: number;
   priceCents: number;
@@ -49,18 +50,24 @@ function priceCentsFromOrder(order: TikTokOrder): number {
  */
 export async function listAuctionOrders(
   tenantId: string,
-  opts: { pageToken?: string; targetCount?: number } = {}
+  // shopId filtra a una sola tienda de TikTok cuando el tenant tiene varias
+  // conectadas (varias trabajadoras, cada una con la suya) — sin esto, se
+  // mezclarían pedidos de todas las tiendas en la misma lista.
+  opts: { pageToken?: string; targetCount?: number; shopId?: string } = {}
 ): Promise<{ orders: AuctionOrderRow[]; nextPageToken: string | null }> {
   const targetCount = opts.targetCount ?? 20;
   const offset = opts.pageToken ? Number(opts.pageToken) || 0 : 0;
 
-  const { data, error } = await supabaseAdmin
+  let query = supabaseAdmin
     .from("orders")
     .select(
-      "id, tk, external_order_id, cliente, precio_cents, moneda, fecha_pedido, fecha_detectado, notes, estado_impresion, impresiones_cobrables, raw_payload"
+      "id, tk, external_order_id, tiktok_shop_id, cliente, precio_cents, moneda, fecha_pedido, fecha_detectado, notes, estado_impresion, impresiones_cobrables, raw_payload"
     )
     .eq("tenant_id", tenantId)
-    .eq("raw_payload->>source", "tiktok_shop_api")
+    .eq("raw_payload->>source", "tiktok_shop_api");
+  if (opts.shopId) query = query.eq("tiktok_shop_id", opts.shopId);
+
+  const { data, error } = await query
     .order("fecha_pedido", { ascending: false, nullsFirst: false })
     .range(offset, offset + targetCount - 1);
 
@@ -70,6 +77,7 @@ export async function listAuctionOrders(
     const payload = (o.raw_payload ?? {}) as { status?: string };
     return {
       tiktokOrderId: o.external_order_id as string,
+      shopId: o.tiktok_shop_id as string | null,
       status: payload.status ?? "UNPAID",
       createTime: Math.floor(new Date((o.fecha_pedido as string) ?? (o.fecha_detectado as string)).getTime() / 1000),
       priceCents: o.precio_cents as number,
@@ -99,11 +107,17 @@ export async function listAuctionOrders(
 export async function ensureLocalOrder(
   tenantId: string,
   tiktokOrderId: string,
-  // Si quien llama ya ha pedido este pedido a TikTok hace un momento (el
-  // webhook lo hace para comprobar order_type antes de llegar aquí), se
-  // reutiliza en vez de volver a pedirlo — evita duplicar la llamada a la
-  // API de TikTok en cada aviso de webhook.
-  prefetchedOrder?: TikTokOrder
+  opts: {
+    // De qué tienda de TikTok viene — un tenant puede tener varias
+    // conectadas (varias trabajadoras, cada una con la suya), así que hay
+    // que guardarlo por pedido para poder filtrar luego por tienda.
+    shopId?: string;
+    // Si quien llama ya ha pedido este pedido a TikTok hace un momento (el
+    // webhook lo hace para comprobar order_type antes de llegar aquí), se
+    // reutiliza en vez de volver a pedirlo — evita duplicar la llamada a la
+    // API de TikTok en cada aviso de webhook.
+    prefetchedOrder?: TikTokOrder;
+  } = {}
 ): Promise<{ id: string; tk: string }> {
   const { data: existing } = await supabaseAdmin
     .from("orders")
@@ -112,12 +126,15 @@ export async function ensureLocalOrder(
     .eq("external_order_id", tiktokOrderId)
     .maybeSingle();
 
-  let order = prefetchedOrder;
+  let order = opts.prefetchedOrder;
+  let shopId = opts.shopId;
   if (!order) {
     const connection = await getValidAccessToken(tenantId);
     const shops = await getShopsForConnection(connection.id);
     if (!shops.length) throw new Error("No hay ninguna tienda de TikTok Shop conectada.");
-    [order] = await getOrderDetails(connection.access_token, shops[0].shop_cipher, [tiktokOrderId]);
+    const shop = shops[0];
+    shopId = shopId ?? shop.shop_id;
+    [order] = await getOrderDetails(connection.access_token, shop.shop_cipher, [tiktokOrderId]);
   }
   if (!order) throw new Error("No se encontró ese pedido en TikTok Shop.");
 
@@ -142,6 +159,7 @@ export async function ensureLocalOrder(
       tenant_id: tenantId,
       tk,
       external_order_id: order.id,
+      tiktok_shop_id: shopId ?? null,
       cliente: clienteFromOrder(order),
       precio_cents: priceCentsFromOrder(order),
       moneda: order.payment?.currency ?? "EUR",

@@ -7,9 +7,10 @@ export async function GET(req: NextRequest) {
   if (!user?.tenant_id) return NextResponse.json({ error: "No autenticado." }, { status: 401 });
 
   const pageToken = req.nextUrl.searchParams.get("page_token") ?? undefined;
+  const shopId = req.nextUrl.searchParams.get("shop_id") ?? undefined;
 
   try {
-    const result = await listAuctionOrders(user.tenant_id, { pageToken });
+    const result = await listAuctionOrders(user.tenant_id, { pageToken, shopId });
     return NextResponse.json(result);
   } catch (err) {
     console.error("[TikTok Shop] Error listando pedidos de subasta:", err);

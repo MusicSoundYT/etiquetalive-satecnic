@@ -1,17 +1,23 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/require-session";
-import { getConnectionForTenant } from "@/lib/tiktok-shop/connection";
+import { getConnectionForTenant, getShopsForConnection } from "@/lib/tiktok-shop/connection";
 import { listAuctionOrders } from "@/lib/tiktok-shop/auction-orders";
-import { TikTokOrdersTable } from "@/components/tiktok-orders-table";
-import { TikTokPrintWatcher } from "@/components/tiktok-print-watcher";
+import { TikTokShopWorkspace } from "@/components/tiktok-shop-workspace";
 
 export default async function PedidosApiPage() {
   const user = await requireSession();
   const connection = user.tenant_id ? await getConnectionForTenant(user.tenant_id) : null;
+  const shops = connection ? await getShopsForConnection(connection.id) : [];
 
-  const initial = connection
-    ? await listAuctionOrders(user.tenant_id!, {})
-    : { orders: [], nextPageToken: null };
+  // Coincide con la elección por defecto del selector de tienda en el
+  // cliente (la primera de la lista) — si el navegador tiene otra guardada
+  // en localStorage, se recarga sola nada más montar.
+  const initialShopId = shops.length > 1 ? shops[0].shop_id : undefined;
+
+  const initial =
+    connection && user.tenant_id
+      ? await listAuctionOrders(user.tenant_id, { shopId: initialShopId })
+      : { orders: [], nextPageToken: null };
 
   return (
     <div className="mx-auto max-w-7xl space-y-8">
@@ -38,10 +44,11 @@ export default async function PedidosApiPage() {
       )}
 
       {connection && (
-        <>
-          <TikTokPrintWatcher />
-          <TikTokOrdersTable initialOrders={initial.orders} initialNextPageToken={initial.nextPageToken} />
-        </>
+        <TikTokShopWorkspace
+          shops={shops}
+          initialOrders={initial.orders}
+          initialNextPageToken={initial.nextPageToken}
+        />
       )}
     </div>
   );

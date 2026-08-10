@@ -35,8 +35,14 @@ function printLabelHtml(html: string) {
  * servidor si hay etiquetas ya cobradas (por el aviso automático de TikTok,
  * o por la extensión si falló al imprimir) esperando a que alguien las
  * imprima de verdad, y las imprime sola — sin volver a leer nada de TikTok.
+ *
+ * shopId (opcional): si el tenant tiene varias tiendas de TikTok conectadas
+ * (varias trabajadoras, cada una con la suya), limita la impresión
+ * automática a los pedidos de esa tienda — sin esto, cualquier pestaña con
+ * la misma cuenta de EtiquetaLive imprimía TODOS los pedidos, de cualquier
+ * tienda.
  */
-export function TikTokPrintWatcher() {
+export function TikTokPrintWatcher({ shopId }: { shopId?: string | null }) {
   const [active, setActive] = useState(true);
   const [printedCount, setPrintedCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +56,8 @@ export function TikTokPrintWatcher() {
 
     async function poll() {
       try {
-        const res = await fetch("/api/tiktok/pending-print");
+        const query = shopId ? `?shop_id=${encodeURIComponent(shopId)}` : "";
+        const res = await fetch(`/api/tiktok/pending-print${query}`);
         if (!res.ok) return;
         const data = await res.json();
         const orders: { label_html: string }[] = data.orders ?? [];
@@ -66,7 +73,7 @@ export function TikTokPrintWatcher() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [active]);
+  }, [active, shopId]);
 
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
