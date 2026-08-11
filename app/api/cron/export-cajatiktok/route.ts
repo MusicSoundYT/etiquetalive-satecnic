@@ -15,9 +15,11 @@ export async function GET(req: NextRequest) {
 
   try {
     const result = await exportDailyAuctionOrders(date);
-    // Solo se avisa si de verdad se ha exportado algo — un día sin
-    // subastas (skipped) no es una novedad que merezca un aviso.
-    if (!result.skipped) {
+    // Se avisa siempre, aunque no haya nada que exportar — así un silencio
+    // total nunca se puede confundir con "el cron ni siquiera ha corrido".
+    if (result.skipped) {
+      await sendTelegramMessage(`ℹ️ Caja TikTok: sin pedidos de subasta que exportar del ${result.date} (no hubo directo).`);
+    } else {
       await sendTelegramMessage(
         `✅ Caja TikTok: exportados ${result.totalOrders} pedidos de subasta (${result.totalClients} clientas) del ${result.date}.`
       );
