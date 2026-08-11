@@ -1,0 +1,84 @@
+import "server-only";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getCajaTikTokClient } from "@/lib/cajatiktok-export/client";
+import { CAJATIKTOK_GRUPO_NOMBRE } from "@/lib/cajatiktok-export/export-daily-auction-orders";
+import { getValidAccessToken, getShopsForConnection } from "@/lib/tiktok-shop/connection";
+import { getOrderDetails } from "@/lib/tiktok-shop/api-client";
+import { mapTikTokStatusToEstadoEnvio } from "@/lib/cajatiktok-export/status-mapping";
+
+const ORDER_DETAILS_CHUNK_SIZE = 20;
+const LOOKBACK_DAYS = 10;
+// Estados terminales: una vez aquí, el pedido ya no cambia en TikTok, así
+// que dejar de revisarlo evita que la lista de "pendientes de comprobar"
+// crezca sin límite con el paso de los días.
+const ESTADOS_TERMINALES = ["Cancelado", "Entregado"];
+
+export async function refreshCajaTikTokOrderStatus(): Promise<{ checked: number; updated: number }> {
+  const { data: connectionRow, error: connectionErr } = await supabaseAdmin
+    .from("tiktok_shop_connections")
+    .select("tenant_id")
+    .limit(1)
+    .maybeSingle();
+  if (connectionErr) throw new Error(`No se pudo leer la conexión de TikTok Shop: ${connectionErr.message}`);
+  if (!connectionRow) throw new Error("No hay ninguna conexión de TikTok Shop configurada todavía.");
+  const tenantId = connectionRow.tenant_id as string;
+
+  const caja = getCajaTikTokClient();
+
+  const { data: grupo, error: grupoErr } = await caja
+    .from("grupos")
+    .select("id")
+    .eq("nombre", CAJATIKTOK_GRUPO_NOMBRE)
+    .maybeSingle();
+  if (grupoErr) throw new Error(`No se pudo buscar el grupo "${CAJATIKTOK_GRUPO_NOMBRE}" en Caja TikTok: ${grupoErr.message}`);
+  if (!grupo) throw new Error(`No existe el grupo "${CAJATIKTOK_GRUPO_NOMBRE}" en Caja TikTok.`);
+  const grupoId = grupo.id as string;
+
+  const lookbackIso = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60_000).toISOString();
+  const { data: recentImports, error: importsErr } = await caja
+    .from("importaciones")
+    .select("id")
+    .eq("grupo_id", grupoId)
+    .neq("estado", "eliminado")
+    .gte("fecha_subida", lookbackIso);
+  if (importsErr) throw new Error(`No se pudieron leer las importaciones recientes: ${importsErr.message}`);
+  const importIds = (recentImports ?? []).map((r) => r.id as string);
+  if (!importIds.length) return { checked: 0, updated: 0 };
+
+  const { data: pedidos, error: pedidosErr } = await caja
+    .from("pedidos")
+    .select("id,pedido_tiktok,estado_envio")
+    .in("importacion_id", importIds)
+    .not("estado_envio", "in", `(${ESTADOS_TERMINALES.join(",")})`);
+  if (pedidosErr) throw new Error(`No se pudieron leer los pedidos a comprobar: ${pedidosErr.message}`);
+  const rows = (pedidos ?? []) as { id: string; pedido_tiktok: string; estado_envio: string | null }[];
+  if (!rows.length) return { checked: 0, updated: 0 };
+
+  const connection = await getValidAccessToken(tenantId);
+  const shops = await getShopsForConnection(connection.id);
+  if (!shops.length) throw new Error("No hay ninguna tienda de TikTok Shop conectada.");
+
+  const estadoByOrderId: Record<string, string> = {};
+  for (const shop of shops) {
+    const orderIds = rows.map((r) => r.pedido_tiktok);
+    for (let i = 0; i < orderIds.length; i += ORDER_DETAILS_CHUNK_SIZE) {
+      const chunk = orderIds.slice(i, i + ORDER_DETAILS_CHUNK_SIZE);
+      const orders = await getOrderDetails(connection.access_token, shop.shop_cipher, chunk);
+      for (const o of orders) estadoByOrderId[o.id] = mapTikTokStatusToEstadoEnvio(o.status);
+    }
+  }
+
+  let updated = 0;
+  for (const row of rows) {
+    const nuevoEstado = estadoByOrderId[row.pedido_tiktok];
+    if (!nuevoEstado || nuevoEstado === row.estado_envio) continue;
+    const { error: updateErr } = await caja.from("pedidos").update({ estado_envio: nuevoEstado }).eq("id", row.id);
+    if (updateErr) {
+      console.error(`[Caja TikTok] No se pudo actualizar el estado del pedido ${row.pedido_tiktok}:`, updateErr.message);
+      continue;
+    }
+    updated++;
+  }
+
+  return { checked: rows.length, updated };
+}

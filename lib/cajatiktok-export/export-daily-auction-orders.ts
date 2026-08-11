@@ -4,7 +4,7 @@ import { getCajaTikTokClient } from "@/lib/cajatiktok-export/client";
 import { getValidAccessToken, getShopsForConnection } from "@/lib/tiktok-shop/connection";
 import { getOrderDetails } from "@/lib/tiktok-shop/api-client";
 
-const CAJATIKTOK_GRUPO_NOMBRE = "Woow Insólito";
+export const CAJATIKTOK_GRUPO_NOMBRE = "Woow Insólito";
 const ESTADO_ENVIO_DEFAULT = "En espera de envío";
 const ORDER_DETAILS_CHUNK_SIZE = 20;
 
@@ -103,12 +103,30 @@ async function fetchProductNames(tenantId: string, orderIds: string[]): Promise<
   return byId;
 }
 
+function defaultRangeNombreArchivo(startUtc: string, endUtc: string): string {
+  const fmt = (iso: string) =>
+    new Intl.DateTimeFormat("es-ES", { timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit", hour12: false })
+      .formatToParts(new Date(iso))
+      .reduce((acc, p) => (p.type === "hour" || p.type === "minute" ? acc + p.value : acc), "");
+  const [dd, mm, yyyy] = formatFechaPedido(startUtc).split(" ")[0].split("/");
+  return `Sesion_TikTok_${dd}-${mm}-${yyyy}_${fmt(startUtc)}-${fmt(endUtc)}.xlsx`;
+}
+
 export async function exportDailyAuctionOrders(
   dateMadrid?: string
 ): Promise<{ skipped: boolean; date: string; totalOrders: number; totalClients: number; importId?: string }> {
   const date = dateMadrid ?? yesterdayMadridDate();
   const { startUtc, endUtc } = madridDayRangeUtc(date);
+  const [yyyy, mm, dd] = date.split("-");
+  const result = await exportAuctionOrdersForRange(startUtc, endUtc, `Auto_TikTok_${dd}-${mm}-${yyyy}.xlsx`);
+  return { ...result, date };
+}
 
+export async function exportAuctionOrdersForRange(
+  startUtc: string,
+  endUtc: string,
+  nombreArchivo?: string
+): Promise<{ skipped: boolean; totalOrders: number; totalClients: number; importId?: string }> {
   const { data: connectionRow, error: connectionErr } = await supabaseAdmin
     .from("tiktok_shop_connections")
     .select("tenant_id")
@@ -129,7 +147,7 @@ export async function exportDailyAuctionOrders(
   if (ordersErr) throw new Error(`No se pudieron leer los pedidos de subasta del día: ${ordersErr.message}`);
 
   const orders = (orderRows ?? []) as OrderRow[];
-  if (!orders.length) return { skipped: true, date, totalOrders: 0, totalClients: 0 };
+  if (!orders.length) return { skipped: true, totalOrders: 0, totalClients: 0 };
 
   const productNameById = await fetchProductNames(
     tenantId,
@@ -181,12 +199,10 @@ export async function exportDailyAuctionOrders(
   for (const row of clientesRows ?? []) clienteIdByKey[row.nombre_key as string] = row.id as string;
 
   const importId = crypto.randomUUID();
-  const [yyyy, mm, dd] = date.split("-");
-  const nombreArchivo = `Auto_TikTok_${dd}-${mm}-${yyyy}.xlsx`;
 
   const { error: importErr } = await caja.from("importaciones").insert({
     id: importId,
-    nombre_archivo: nombreArchivo,
+    nombre_archivo: nombreArchivo ?? defaultRangeNombreArchivo(startUtc, endUtc),
     total_pedidos: orders.length,
     total_clientes: buyerKeys.length,
     activa: false,
@@ -236,5 +252,5 @@ export async function exportDailyAuctionOrders(
     .upsert(pedidosPayload, { onConflict: "importacion_id,pedido_tiktok" });
   if (pedidosErr) throw new Error(`No se pudieron guardar los pedidos: ${pedidosErr.message}`);
 
-  return { skipped: false, date, totalOrders: orders.length, totalClients: buyerKeys.length, importId };
+  return { skipped: false, totalOrders: orders.length, totalClients: buyerKeys.length, importId };
 }
