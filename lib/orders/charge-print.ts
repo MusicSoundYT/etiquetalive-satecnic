@@ -4,37 +4,56 @@ import { adjustBalance, getPriceCentsForTier, getUserBalance } from "@/lib/walle
 import { maybeAutoRecharge } from "@/lib/wallet/auto-recharge";
 import { maybeAutoUpgradeTier } from "@/lib/wallet/tier-upgrade";
 import { sendLowBalanceEmail } from "@/lib/mail/send-low-balance-email";
+import { sendTelegramMessage } from "@/lib/telegram/send-telegram-message";
 
 // Margen de gracia: se permite que el saldo llegue hasta -2€ antes de
 // bloquear la impresión (p. ej. un cobro de 0,10€ con saldo a 0€ no debe
 // frenar un directo en marcha). Más allá de este límite, no se cobra más.
 const NEGATIVE_BALANCE_FLOOR_CENTS = -200;
 
-// No se envía un correo por cada intento bloqueado durante el mismo directo
-// (podrían ser decenas) — se espacían los avisos con este margen.
+// No se envía un aviso por cada intento bloqueado durante el mismo directo
+// (podrían ser decenas) — se espacían los avisos con este margen. Se
+// reutiliza el mismo reloj para "saldo bajo" y "cuenta bloqueada": en la
+// práctica son estados sucesivos de la misma cuenta, no hace falta llevar
+// dos cooldowns independientes.
 const LOW_BALANCE_NOTICE_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
 async function notifyLowBalanceOnce(userId: string, email: string | undefined) {
   if (!email) return;
   try {
-    const { data } = await supabaseAdmin
-      .from("user_balances")
-      .select("low_balance_notified_at")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    const lastNotified = data?.low_balance_notified_at ? new Date(data.low_balance_notified_at).getTime() : 0;
-    if (Date.now() - lastNotified < LOW_BALANCE_NOTICE_COOLDOWN_MS) return;
-
-    await supabaseAdmin
-      .from("user_balances")
-      .update({ low_balance_notified_at: new Date().toISOString() })
-      .eq("user_id", userId);
-
+    if (!(await claimNotifyCooldown(userId))) return;
     await sendLowBalanceEmail(email);
+    await sendTelegramMessage(`💸 Saldo bajo: ${email} está a punto de quedarse sin saldo para imprimir.`);
   } catch {
-    // Un fallo al avisar por email nunca debe romper la respuesta de cobro.
+    // Un fallo al avisar nunca debe romper la respuesta de cobro.
   }
+}
+
+async function notifyBlockedOnce(userId: string, email: string | undefined, reason: string) {
+  try {
+    if (!(await claimNotifyCooldown(userId))) return;
+    await sendTelegramMessage(`⛔ Cuenta bloqueada: ${email ?? userId} ha intentado imprimir — ${reason}`);
+  } catch {
+    // Un fallo al avisar nunca debe romper la respuesta de cobro.
+  }
+}
+
+/** true si toca avisar ahora (y ya deja marcado que se ha avisado); false si todavía está en cooldown. */
+async function claimNotifyCooldown(userId: string): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from("user_balances")
+    .select("low_balance_notified_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const lastNotified = data?.low_balance_notified_at ? new Date(data.low_balance_notified_at).getTime() : 0;
+  if (Date.now() - lastNotified < LOW_BALANCE_NOTICE_COOLDOWN_MS) return false;
+
+  await supabaseAdmin
+    .from("user_balances")
+    .update({ low_balance_notified_at: new Date().toISOString() })
+    .eq("user_id", userId);
+  return true;
 }
 
 type OrderRow = Record<string, unknown> & {
@@ -80,7 +99,9 @@ export async function claimAndChargePrint(
 
   if (!balance?.is_demo) {
     if (balance?.is_blocked) {
-      return { status: "blocked", reason: balance.block_reason ?? "Cuenta bloqueada para impresión." };
+      const reason = balance.block_reason ?? "Cuenta bloqueada para impresión.";
+      await notifyBlockedOnce(owner.id, owner.email, reason);
+      return { status: "blocked", reason };
     }
 
     const priceCents = await getPriceCentsForTier(balance?.current_tier ?? 1);
