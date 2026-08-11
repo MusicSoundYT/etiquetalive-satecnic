@@ -36,6 +36,12 @@ export function requireStripeEnv() {
   };
 }
 
+// Compartido por todas las rutas de cron (exportación a Caja TikTok, resumen
+// de impresiones...) — no depende de ninguna integración concreta.
+export function requireCronSecret(): string {
+  return required("CRON_SECRET");
+}
+
 // Proyecto Supabase del hermano "Caja TikTok" (cajatiktok), completamente
 // aparte del nuestro — se escribe ahí con la service_role key porque el
 // cron corre sin ninguna sesión de usuario que RLS pueda reconocer.
@@ -43,6 +49,6 @@ export function requireCajaTikTokExportEnv() {
   return {
     supabaseUrl: required("CAJATIKTOK_SUPABASE_URL"),
     supabaseServiceRoleKey: required("CAJATIKTOK_SUPABASE_SERVICE_ROLE_KEY"),
-    cronSecret: required("CRON_SECRET"),
+    cronSecret: requireCronSecret(),
   };
 }
