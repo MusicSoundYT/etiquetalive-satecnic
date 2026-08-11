@@ -77,8 +77,17 @@ export async function refreshCajaTikTokOrderStatus(): Promise<{ checked: number;
     const orderIds = rows.map((r) => r.pedido_tiktok);
     for (let i = 0; i < orderIds.length; i += ORDER_DETAILS_CHUNK_SIZE) {
       const chunk = orderIds.slice(i, i + ORDER_DETAILS_CHUNK_SIZE);
-      const orders = await getOrderDetails(connection.access_token, shop.shop_cipher, chunk);
-      for (const o of orders) estadoByOrderId[o.id] = mapTikTokStatusToEstadoEnvio(o.status);
+      try {
+        const orders = await getOrderDetails(connection.access_token, shop.shop_cipher, chunk);
+        for (const o of orders) estadoByOrderId[o.id] = mapTikTokStatusToEstadoEnvio(o.status);
+      } catch (err) {
+        // Visto en producción: un solo pedido_tiktok inválido (p. ej. de una
+        // importación manual con un ID mal escrito) tira abajo el lote
+        // entero de 20 — y con él, TODA la ejecución, cada 20 minutos, sin
+        // actualizar ni uno de los pedidos válidos de los demás lotes. Se
+        // salta solo ESTE lote y se sigue con el resto.
+        console.error(`[Caja TikTok] Lote de estados fallido (${chunk.join(", ")}):`, err);
+      }
     }
   }
 
