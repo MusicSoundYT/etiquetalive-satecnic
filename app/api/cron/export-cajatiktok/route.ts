@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCajaTikTokExportEnv } from "@/lib/env";
+import { verifyCronSecret } from "@/lib/auth/verify-cron-secret";
 import { exportDailyAuctionOrders } from "@/lib/cajatiktok-export/export-daily-auction-orders";
 import { sendTelegramMessage } from "@/lib/telegram/send-telegram-message";
 
@@ -8,8 +9,7 @@ import { sendTelegramMessage } from "@/lib/telegram/send-telegram-message";
 // CRON_SECRET en vez de sesión, porque no hay ningún usuario logueado.
 export async function GET(req: NextRequest) {
   const { cronSecret } = requireCajaTikTokExportEnv();
-  const provided = req.nextUrl.searchParams.get("secret") ?? req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (provided !== cronSecret) return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  if (!verifyCronSecret(req, cronSecret)) return NextResponse.json({ error: "No autorizado." }, { status: 401 });
 
   const date = req.nextUrl.searchParams.get("date") ?? undefined;
 

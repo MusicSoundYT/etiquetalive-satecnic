@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCajaTikTokExportEnv } from "@/lib/env";
+import { verifyCronSecret } from "@/lib/auth/verify-cron-secret";
 import { exportAuctionOrdersForRange } from "@/lib/cajatiktok-export/export-daily-auction-orders";
 
 // Llamado por la Edge Function "tiktok-bridge" de Caja TikTok (nunca
@@ -7,8 +8,7 @@ import { exportAuctionOrdersForRange } from "@/lib/cajatiktok-export/export-dail
 // fecha/hora en la pantalla de "Importar sesión de TikTok".
 export async function POST(req: NextRequest) {
   const { cronSecret } = requireCajaTikTokExportEnv();
-  const provided = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (provided !== cronSecret) return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  if (!verifyCronSecret(req, cronSecret)) return NextResponse.json({ error: "No autorizado." }, { status: 401 });
 
   let body: { startUtc?: string; endUtc?: string; nombreArchivo?: string };
   try {

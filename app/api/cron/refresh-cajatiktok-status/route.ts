@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCajaTikTokExportEnv } from "@/lib/env";
+import { verifyCronSecret } from "@/lib/auth/verify-cron-secret";
 import { refreshCajaTikTokOrderStatus } from "@/lib/cajatiktok-export/refresh-order-status";
 
 // Disparado cada 15-30 min por el crontab del VPS. Revisa contra TikTok los
@@ -8,8 +9,7 @@ import { refreshCajaTikTokOrderStatus } from "@/lib/cajatiktok-export/refresh-or
 // pantalla de Caja TikTok se refresca sola vía su suscripción realtime.
 export async function GET(req: NextRequest) {
   const { cronSecret } = requireCajaTikTokExportEnv();
-  const provided = req.nextUrl.searchParams.get("secret") ?? req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (provided !== cronSecret) return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  if (!verifyCronSecret(req, cronSecret)) return NextResponse.json({ error: "No autorizado." }, { status: 401 });
 
   try {
     const result = await refreshCajaTikTokOrderStatus();

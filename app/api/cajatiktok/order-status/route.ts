@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCajaTikTokExportEnv } from "@/lib/env";
+import { verifyCronSecret } from "@/lib/auth/verify-cron-secret";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getValidAccessToken, getShopsForConnection } from "@/lib/tiktok-shop/connection";
 import { getOrderDetails } from "@/lib/tiktok-shop/api-client";
@@ -10,8 +11,7 @@ import { mapTikTokStatusToEstadoEnvio } from "@/lib/cajatiktok-export/status-map
 // "tiktok-bridge") — no lee de nuestra base de datos, pregunta a TikTok.
 export async function GET(req: NextRequest) {
   const { cronSecret } = requireCajaTikTokExportEnv();
-  const provided = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (provided !== cronSecret) return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  if (!verifyCronSecret(req, cronSecret)) return NextResponse.json({ error: "No autorizado." }, { status: 401 });
 
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Falta el parámetro id." }, { status: 400 });
