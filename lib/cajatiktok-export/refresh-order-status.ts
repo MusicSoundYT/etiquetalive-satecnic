@@ -35,23 +35,37 @@ export async function refreshCajaTikTokOrderStatus(): Promise<{ checked: number;
   const grupoId = grupo.id as string;
 
   const lookbackIso = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60_000).toISOString();
+  // Solo importaciones generadas por nuestra propia exportación (diaria o por
+  // rango) — NUNCA las subidas manuales de Excel del equipo (incluidos los
+  // volcados "Todo pedido..." con miles de pedidos que no son de subasta),
+  // que no nos corresponde tocar.
   const { data: recentImports, error: importsErr } = await caja
     .from("importaciones")
     .select("id")
     .eq("grupo_id", grupoId)
     .neq("estado", "eliminado")
-    .gte("fecha_subida", lookbackIso);
+    .gte("fecha_subida", lookbackIso)
+    .or("nombre_archivo.ilike.Auto_TikTok_%,nombre_archivo.ilike.Sesion_TikTok_%");
   if (importsErr) throw new Error(`No se pudieron leer las importaciones recientes: ${importsErr.message}`);
   const importIds = (recentImports ?? []).map((r) => r.id as string);
   if (!importIds.length) return { checked: 0, updated: 0 };
 
-  const { data: pedidos, error: pedidosErr } = await caja
-    .from("pedidos")
-    .select("id,pedido_tiktok,estado_envio")
-    .in("importacion_id", importIds)
-    .not("estado_envio", "in", `(${ESTADOS_TERMINALES.join(",")})`);
-  if (pedidosErr) throw new Error(`No se pudieron leer los pedidos a comprobar: ${pedidosErr.message}`);
-  const rows = (pedidos ?? []) as { id: string; pedido_tiktok: string; estado_envio: string | null }[];
+  // Sin .range(), PostgREST recorta en silencio a 1000 filas — con el
+  // filtro de arriba el volumen real es pequeño, pero se pagina de todos
+  // modos para no volver a depender de ese límite implícito.
+  const PAGE_SIZE = 1000;
+  const rows: { id: string; pedido_tiktok: string; estado_envio: string | null }[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data: page, error: pedidosErr } = await caja
+      .from("pedidos")
+      .select("id,pedido_tiktok,estado_envio")
+      .in("importacion_id", importIds)
+      .not("estado_envio", "in", `(${ESTADOS_TERMINALES.join(",")})`)
+      .range(from, from + PAGE_SIZE - 1);
+    if (pedidosErr) throw new Error(`No se pudieron leer los pedidos a comprobar: ${pedidosErr.message}`);
+    rows.push(...((page ?? []) as typeof rows));
+    if (!page || page.length < PAGE_SIZE) break;
+  }
   if (!rows.length) return { checked: 0, updated: 0 };
 
   const connection = await getValidAccessToken(tenantId);
