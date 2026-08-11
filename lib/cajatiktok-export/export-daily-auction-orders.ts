@@ -109,7 +109,7 @@ function defaultRangeNombreArchivo(startUtc: string, endUtc: string): string {
       .formatToParts(new Date(iso))
       .reduce((acc, p) => (p.type === "hour" || p.type === "minute" ? acc + p.value : acc), "");
   const [dd, mm, yyyy] = formatFechaPedido(startUtc).split(" ")[0].split("/");
-  return `Sesion_TikTok_${dd}-${mm}-${yyyy}_${fmt(startUtc)}-${fmt(endUtc)}.xlsx`;
+  return `Importacion_Manual_${dd}-${mm}-${yyyy}_${fmt(startUtc)}-${fmt(endUtc)}.xlsx`;
 }
 
 export async function exportDailyAuctionOrders(

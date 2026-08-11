@@ -45,7 +45,7 @@ export async function refreshCajaTikTokOrderStatus(): Promise<{ checked: number;
     .eq("grupo_id", grupoId)
     .neq("estado", "eliminado")
     .gte("fecha_subida", lookbackIso)
-    .or("nombre_archivo.ilike.Auto_TikTok_%,nombre_archivo.ilike.Sesion_TikTok_%");
+    .or("nombre_archivo.ilike.Auto_TikTok_%,nombre_archivo.ilike.Importacion_Manual_%");
   if (importsErr) throw new Error(`No se pudieron leer las importaciones recientes: ${importsErr.message}`);
   const importIds = (recentImports ?? []).map((r) => r.id as string);
   if (!importIds.length) return { checked: 0, updated: 0 };
