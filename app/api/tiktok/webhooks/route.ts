@@ -126,6 +126,22 @@ async function processOrderStatusChange(payload: TikTokOrderStatusChangePayload)
 
   const local = await ensureLocalOrder(tenantId, orderId, { shopId: shop.shop_id, prefetchedOrder: order });
 
+  // "Primera vez que vemos este pedido" no siempre significa "recién
+  // creado" — TikTok puede tocar (p. ej. completar) un pedido de semanas
+  // atrás que, por lo que sea, nunca nos había llegado antes, y eso también
+  // pasaría la comprobación de "existing" de arriba. Se registra igual (para
+  // poder imprimirlo a mano si hace falta) pero no se cobra/imprime solo si
+  // el pedido no es de las últimas 48h — un pedido de un directo en marcha
+  // siempre lo será.
+  const MAX_AUTO_PRINT_AGE_MS = 48 * 60 * 60 * 1000;
+  const orderAgeMs = Date.now() - order.create_time * 1000;
+  if (orderAgeMs > MAX_AUTO_PRINT_AGE_MS) {
+    console.warn(
+      `[TikTok Shop] Pedido ${orderId} visto por primera vez pero con ${(orderAgeMs / 3_600_000).toFixed(0)}h de antigüedad — no se cobra/imprime automáticamente.`
+    );
+    return;
+  }
+
   const { data: fullOrder } = await supabaseAdmin
     .from("orders")
     .select("*")
