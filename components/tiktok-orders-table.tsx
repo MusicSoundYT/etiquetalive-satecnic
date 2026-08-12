@@ -98,6 +98,30 @@ export function TikTokOrdersTable({
       .catch(() => setActionError("No se pudieron cargar los pedidos de esta tienda."));
   }, [shopId]);
 
+  // Refresco automático de la lista visual — el popup de imprimir ya se
+  // dispara solo, pero la tabla en sí solo se cargaba una vez al abrir la
+  // página. Se vuelve a pedir la primera página cada pocos segundos y se
+  // añaden arriba solo los pedidos que todavía no estuvieran en pantalla,
+  // sin tocar las filas ya cargadas (para no perder notas/estado en curso).
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const query = shopId ? `?shop_id=${encodeURIComponent(shopId)}` : "";
+      fetch(`/api/tiktok/orders${query}`)
+        .then((res) => res.json())
+        .then((data) => {
+          const fresh: AuctionOrderRow[] = data.orders ?? [];
+          setOrders((prev) => {
+            const knownIds = new Set(prev.map((o) => o.tiktokOrderId));
+            const newOnes = fresh.filter((o) => !knownIds.has(o.tiktokOrderId));
+            if (!newOnes.length) return prev;
+            return [...newOnes, ...prev];
+          });
+        })
+        .catch(() => {});
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [shopId]);
+
   function showToast(message: string) {
     setToast(message);
     setTimeout(() => setToast((current) => (current === message ? null : current)), 2000);
