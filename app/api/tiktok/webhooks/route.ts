@@ -4,7 +4,7 @@ import { verifyWebhookSignature, type TikTokOrderStatusChangePayload } from "@/l
 import { getOrderDetails } from "@/lib/tiktok-shop/api-client";
 import { getValidAccessToken, getShopsForConnection, toApiCredentials } from "@/lib/tiktok-shop/connection";
 import { getAppCredentialsForTenant } from "@/lib/tiktok-shop/app-credentials";
-import { ensureLocalOrder } from "@/lib/tiktok-shop/auction-orders";
+import { ensureLocalOrder, clienteFromOrder, CLIENTE_DESCONOCIDO } from "@/lib/tiktok-shop/auction-orders";
 import { claimAndChargePrint } from "@/lib/orders/charge-print";
 
 /** A qué tenant pertenece una tienda de TikTok, o null si no la conocemos. */
@@ -106,6 +106,23 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ status: "ok" });
 }
 
+async function refreshClienteIfNowAvailable(tenantId: string, orderRowId: string, tiktokOrderId: string): Promise<void> {
+  try {
+    const connection = await getValidAccessToken(tenantId);
+    const shops = await getShopsForConnection(connection.id);
+    for (const shop of shops) {
+      const [order] = await getOrderDetails(toApiCredentials(connection), shop.shop_cipher, [tiktokOrderId]);
+      if (!order) continue;
+      const cliente = clienteFromOrder(order);
+      if (cliente === CLIENTE_DESCONOCIDO) return;
+      await supabaseAdmin.from("orders").update({ cliente }).eq("id", orderRowId);
+      return;
+    }
+  } catch (err) {
+    console.error(`[TikTok Shop] No se pudo refrescar el nombre del pedido ${tiktokOrderId}:`, err);
+  }
+}
+
 async function processOrderStatusChange(tenantId: string, payload: TikTokOrderStatusChangePayload): Promise<void> {
   const orderId = payload.data?.order_id;
   if (!orderId) return;
@@ -121,11 +138,21 @@ async function processOrderStatusChange(tenantId: string, payload: TikTokOrderSt
   // de un directo en marcha, los cambios de estado posteriores no afectan).
   const { data: existing } = await supabaseAdmin
     .from("orders")
-    .select("id")
+    .select("id, cliente")
     .eq("tenant_id", tenantId)
     .eq("external_order_id", orderId)
     .maybeSingle();
-  if (existing) return;
+  if (existing) {
+    // TikTok puede no tener todavía la dirección de envío rellena en el
+    // instante del primer aviso (visto en producción: recipient_address
+    // vacío nada más crearse el pedido, completo unos minutos después) — se
+    // guardó como CLIENTE_DESCONOCIDO y, a diferencia del resto de este
+    // pedido, nada más lo vuelve a tocar. Se aprovecha este aviso posterior
+    // (normalmente el cambio a pagado/enviado, segundos o minutos después)
+    // para completarlo, sin cobrar ni imprimir de nuevo.
+    if (existing.cliente === CLIENTE_DESCONOCIDO) await refreshClienteIfNowAvailable(tenantId, existing.id, orderId);
+    return;
+  }
 
   const { data: tenant } = await supabaseAdmin
     .from("tenants")
