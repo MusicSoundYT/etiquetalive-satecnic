@@ -27,11 +27,20 @@ export function TikTokShopPanel({
   connection,
   shops,
   initialStatus,
+  hasAppCredentials,
 }: {
   connection: Connection;
   shops: Shop[];
   initialStatus?: string;
+  hasAppCredentials: boolean;
 }) {
+  const [appKey, setAppKey] = useState("");
+  const [appSecret, setAppSecret] = useState("");
+  const [serviceId, setServiceId] = useState("");
+  const [savedCredentials, setSavedCredentials] = useState(hasAppCredentials);
+  const [savingCredentials, setSavingCredentials] = useState(false);
+  const [credentialsError, setCredentialsError] = useState<string | null>(null);
+  const [redirectUri, setRedirectUri] = useState("");
   const [disconnecting, setDisconnecting] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testError, setTestError] = useState<string | null>(null);
@@ -45,6 +54,7 @@ export function TikTokShopPanel({
   const statusMsg = initialStatus ? STATUS_MESSAGES[initialStatus] : null;
 
   useEffect(() => {
+    setTimeout(() => setRedirectUri(`${window.location.origin}/api/tiktok/oauth/callback`), 0);
     if (!connection) return;
     fetch("/api/tiktok/register-webhook")
       .then((res) => res.json())
@@ -52,6 +62,28 @@ export function TikTokShopPanel({
       .catch(() => setWebhookActive(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function handleSaveCredentials(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingCredentials(true);
+    setCredentialsError(null);
+    try {
+      const res = await fetch("/api/tiktok/app-credentials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appKey, appSecret, serviceId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCredentialsError(data.error ?? "No se pudieron guardar las credenciales.");
+        return;
+      }
+      setSavedCredentials(true);
+      setAppSecret("");
+    } finally {
+      setSavingCredentials(false);
+    }
+  }
 
   async function handleRegisterWebhook() {
     setRegistering(true);
@@ -114,13 +146,73 @@ export function TikTokShopPanel({
       )}
 
       {!connection && (
-        <div className="max-w-sm rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-            Conecta tu tienda directamente con la API oficial de TikTok Shop.
-          </p>
-          <a href="/api/tiktok/oauth/start" className={`${buttonClass} inline-block w-auto px-4 text-center`}>
-            Conectar con TikTok Shop
-          </a>
+        <div className="max-w-sm space-y-3">
+          <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+              Cada cuenta usa su propia app de TikTok Shop (Partner Center → Aplicaciones y servicios
+              → Crear aplicación → Servicio personalizado). Pega aquí sus datos:
+            </p>
+
+            <label className="mb-2 block text-xs text-zinc-500 dark:text-zinc-400">
+              URL de redirección (pégala en TikTok tal cual)
+              <input
+                readOnly
+                value={redirectUri}
+                onFocus={(e) => e.currentTarget.select()}
+                className="mt-1 w-full rounded border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400"
+              />
+            </label>
+
+            {savedCredentials ? (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-emerald-600 dark:text-emerald-400">
+                  ✅ Credenciales de la app guardadas.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSavedCredentials(false)}
+                  className="text-xs text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                >
+                  Cambiar
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleSaveCredentials} className="space-y-2">
+                <input
+                  required
+                  placeholder="App Key"
+                  value={appKey}
+                  onChange={(e) => setAppKey(e.target.value)}
+                  className="w-full rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                />
+                <input
+                  required
+                  type="password"
+                  placeholder="App Secret"
+                  value={appSecret}
+                  onChange={(e) => setAppSecret(e.target.value)}
+                  className="w-full rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                />
+                <input
+                  required
+                  placeholder="Service ID"
+                  value={serviceId}
+                  onChange={(e) => setServiceId(e.target.value)}
+                  className="w-full rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                />
+                <button type="submit" disabled={savingCredentials} className={`${buttonClass} w-auto px-4`}>
+                  {savingCredentials ? "Guardando…" : "Guardar credenciales"}
+                </button>
+                <ErrorText message={credentialsError} />
+              </form>
+            )}
+          </div>
+
+          {savedCredentials && (
+            <a href="/api/tiktok/oauth/start" className={`${buttonClass} inline-block w-auto px-4 text-center`}>
+              Conectar con TikTok Shop
+            </a>
+          )}
         </div>
       )}
 

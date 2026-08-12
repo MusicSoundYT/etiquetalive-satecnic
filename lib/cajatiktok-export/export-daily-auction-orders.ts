@@ -1,9 +1,10 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getCajaTikTokClient } from "@/lib/cajatiktok-export/client";
-import { getValidAccessToken, getShopsForConnection } from "@/lib/tiktok-shop/connection";
+import { getValidAccessToken, getShopsForConnection, toApiCredentials } from "@/lib/tiktok-shop/connection";
 import { getOrderDetails } from "@/lib/tiktok-shop/api-client";
 import { madridDayRangeUtc, yesterdayMadridDate } from "@/lib/utils/madrid-date";
+import { CAJATIKTOK_TENANT_ID } from "@/lib/cajatiktok-export/tenant";
 
 export const CAJATIKTOK_GRUPO_NOMBRE = "Woow Insólito";
 const ESTADO_ENVIO_DEFAULT = "En espera de envío";
@@ -50,7 +51,7 @@ async function fetchProductNames(tenantId: string, orderIds: string[]): Promise<
     for (const shop of shops) {
       for (let i = 0; i < orderIds.length; i += ORDER_DETAILS_CHUNK_SIZE) {
         const chunk = orderIds.slice(i, i + ORDER_DETAILS_CHUNK_SIZE);
-        const orders = await getOrderDetails(connection.access_token, shop.shop_cipher, chunk);
+        const orders = await getOrderDetails(toApiCredentials(connection), shop.shop_cipher, chunk);
         for (const o of orders) byId[o.id] = o.line_items?.[0]?.product_name ?? "";
       }
     }
@@ -87,14 +88,7 @@ export async function exportAuctionOrdersForRange(
   endUtc: string,
   nombreArchivo?: string
 ): Promise<{ skipped: boolean; totalOrders: number; totalClients: number; importId?: string }> {
-  const { data: connectionRow, error: connectionErr } = await supabaseAdmin
-    .from("tiktok_shop_connections")
-    .select("tenant_id")
-    .limit(1)
-    .maybeSingle();
-  if (connectionErr) throw new Error(`No se pudo leer la conexión de TikTok Shop: ${connectionErr.message}`);
-  if (!connectionRow) throw new Error("No hay ninguna conexión de TikTok Shop configurada todavía.");
-  const tenantId = connectionRow.tenant_id as string;
+  const tenantId = CAJATIKTOK_TENANT_ID;
 
   const { data: orderRows, error: ordersErr } = await supabaseAdmin
     .from("orders")

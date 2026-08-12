@@ -1,8 +1,16 @@
 import "server-only";
-import { requireTikTokShopEnv } from "@/lib/env";
 import { signTikTokRequest } from "@/lib/tiktok-shop/sign";
 
 const API_BASE = "https://open-api.tiktokglobalshop.com";
+
+// Cada tenant tiene su propia app registrada en el Partner Center de TikTok
+// (ver lib/tiktok-shop/app-credentials.ts) — ya no hay una app_key/app_secret
+// global, así que toda llamada a la API necesita saber de qué tenant es.
+export type TikTokApiCredentials = {
+  accessToken: string;
+  appKey: string;
+  appSecret: string;
+};
 
 /**
  * Llamada firmada genérica a la API de TikTok Shop. El cuerpo, si lo hay,
@@ -12,11 +20,11 @@ const API_BASE = "https://open-api.tiktokglobalshop.com";
 async function callApi<T>(params: {
   method: "GET" | "POST" | "PUT" | "DELETE";
   path: string;
-  accessToken: string;
+  credentials: TikTokApiCredentials;
   query?: Record<string, string>;
   bodyString?: string;
 }): Promise<T> {
-  const { appKey, appSecret } = requireTikTokShopEnv();
+  const { accessToken, appKey, appSecret } = params.credentials;
   const timestamp = String(Math.floor(Date.now() / 1000));
   const query: Record<string, string> = { app_key: appKey, timestamp, ...(params.query ?? {}) };
   const sign = signTikTokRequest({ path: params.path, query, body: params.bodyString, appSecret });
@@ -28,7 +36,7 @@ async function callApi<T>(params: {
   const res = await fetch(url.toString(), {
     method: params.method,
     headers: {
-      "x-tts-access-token": params.accessToken,
+      "x-tts-access-token": accessToken,
       ...(params.bodyString ? { "content-type": "application/json" } : {}),
     },
     body: params.bodyString,
@@ -54,11 +62,11 @@ export type TikTokAuthorizedShop = {
  * de tokens NO incluye ningún identificador de tienda — hay que pedirlo
  * aparte con esta llamada, justo después de autorizar.
  */
-export async function getAuthorizedShops(accessToken: string): Promise<TikTokAuthorizedShop[]> {
+export async function getAuthorizedShops(credentials: TikTokApiCredentials): Promise<TikTokAuthorizedShop[]> {
   const data = await callApi<{ shops: TikTokAuthorizedShop[] }>({
     method: "GET",
     path: "/authorization/202309/shops",
-    accessToken,
+    credentials,
   });
   return data.shops;
 }
@@ -87,7 +95,7 @@ export type TikTokOrderSearchResult = {
  * devuelve esta función.
  */
 export async function searchOrders(
-  accessToken: string,
+  credentials: TikTokApiCredentials,
   shopCipher: string,
   opts: { pageSize?: number; pageToken?: string; sortField?: "create_time" | "update_time"; sortOrder?: "ASC" | "DESC" } = {}
 ): Promise<TikTokOrderSearchResult> {
@@ -103,7 +111,7 @@ export async function searchOrders(
   return callApi<TikTokOrderSearchResult>({
     method: "POST",
     path: "/order/202309/orders/search",
-    accessToken,
+    credentials,
     query,
     bodyString,
   });
@@ -115,11 +123,11 @@ export async function searchOrders(
  * shop_cipher es obligatorio: sin él la API no sabe a qué tienda te refieres
  * (confirmado en producción: error 106013 "Missing identifier" sin este dato).
  */
-export async function registerOrderStatusWebhook(accessToken: string, shopCipher: string, address: string): Promise<void> {
+export async function registerOrderStatusWebhook(credentials: TikTokApiCredentials, shopCipher: string, address: string): Promise<void> {
   await callApi<unknown>({
     method: "PUT",
     path: "/event/202309/webhooks",
-    accessToken,
+    credentials,
     query: { shop_cipher: shopCipher },
     bodyString: JSON.stringify({ address, event_type: "ORDER_STATUS_CHANGE" }),
   });
@@ -128,22 +136,22 @@ export async function registerOrderStatusWebhook(accessToken: string, shopCipher
 export type TikTokWebhookSubscription = { address: string; event_type: string };
 
 /** Webhooks activos actualmente registrados para esta tienda. */
-export async function listRegisteredWebhooks(accessToken: string, shopCipher: string): Promise<TikTokWebhookSubscription[]> {
+export async function listRegisteredWebhooks(credentials: TikTokApiCredentials, shopCipher: string): Promise<TikTokWebhookSubscription[]> {
   const data = await callApi<{ webhooks: TikTokWebhookSubscription[] }>({
     method: "GET",
     path: "/event/202309/webhooks",
-    accessToken,
+    credentials,
     query: { shop_cipher: shopCipher },
   });
   return data.webhooks ?? [];
 }
 
 /** Detalle completo de uno o varios pedidos (hasta 50 ids por llamada). */
-export async function getOrderDetails(accessToken: string, shopCipher: string, orderIds: string[]): Promise<TikTokOrder[]> {
+export async function getOrderDetails(credentials: TikTokApiCredentials, shopCipher: string, orderIds: string[]): Promise<TikTokOrder[]> {
   const data = await callApi<{ orders: TikTokOrder[] }>({
     method: "GET",
     path: "/order/202507/orders",
-    accessToken,
+    credentials,
     query: { shop_cipher: shopCipher, ids: orderIds.join(",") },
   });
   return data.orders;

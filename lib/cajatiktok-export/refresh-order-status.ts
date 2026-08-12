@@ -1,10 +1,10 @@
 import "server-only";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getCajaTikTokClient } from "@/lib/cajatiktok-export/client";
 import { CAJATIKTOK_GRUPO_NOMBRE } from "@/lib/cajatiktok-export/export-daily-auction-orders";
-import { getValidAccessToken, getShopsForConnection } from "@/lib/tiktok-shop/connection";
+import { getValidAccessToken, getShopsForConnection, toApiCredentials } from "@/lib/tiktok-shop/connection";
 import { getOrderDetails } from "@/lib/tiktok-shop/api-client";
 import { mapTikTokStatusToEstadoEnvio } from "@/lib/cajatiktok-export/status-mapping";
+import { CAJATIKTOK_TENANT_ID } from "@/lib/cajatiktok-export/tenant";
 
 const ORDER_DETAILS_CHUNK_SIZE = 20;
 const LOOKBACK_DAYS = 10;
@@ -14,14 +14,7 @@ const LOOKBACK_DAYS = 10;
 const ESTADOS_TERMINALES = ["Cancelado", "Entregado"];
 
 export async function refreshCajaTikTokOrderStatus(): Promise<{ checked: number; updated: number }> {
-  const { data: connectionRow, error: connectionErr } = await supabaseAdmin
-    .from("tiktok_shop_connections")
-    .select("tenant_id")
-    .limit(1)
-    .maybeSingle();
-  if (connectionErr) throw new Error(`No se pudo leer la conexión de TikTok Shop: ${connectionErr.message}`);
-  if (!connectionRow) throw new Error("No hay ninguna conexión de TikTok Shop configurada todavía.");
-  const tenantId = connectionRow.tenant_id as string;
+  const tenantId = CAJATIKTOK_TENANT_ID;
 
   const caja = getCajaTikTokClient();
 
@@ -78,7 +71,7 @@ export async function refreshCajaTikTokOrderStatus(): Promise<{ checked: number;
     for (let i = 0; i < orderIds.length; i += ORDER_DETAILS_CHUNK_SIZE) {
       const chunk = orderIds.slice(i, i + ORDER_DETAILS_CHUNK_SIZE);
       try {
-        const orders = await getOrderDetails(connection.access_token, shop.shop_cipher, chunk);
+        const orders = await getOrderDetails(toApiCredentials(connection), shop.shop_cipher, chunk);
         for (const o of orders) estadoByOrderId[o.id] = mapTikTokStatusToEstadoEnvio(o.status);
       } catch (err) {
         // Visto en producción: un solo pedido_tiktok inválido (p. ej. de una

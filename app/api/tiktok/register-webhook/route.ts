@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth/session";
 import { env } from "@/lib/env";
-import { getValidAccessToken, getShopsForConnection } from "@/lib/tiktok-shop/connection";
+import { getValidAccessToken, getShopsForConnection, toApiCredentials } from "@/lib/tiktok-shop/connection";
 import { registerOrderStatusWebhook, listRegisteredWebhooks } from "@/lib/tiktok-shop/api-client";
 
 export async function GET() {
@@ -16,7 +16,7 @@ export async function GET() {
     // Con Fase 1 solo hay una tienda por conexión en la práctica — se
     // comprueba con la primera. Si en el futuro hay más de una, esto habría
     // que revisarlo por tienda.
-    const webhooks = await listRegisteredWebhooks(connection.access_token, shops[0].shop_cipher);
+    const webhooks = await listRegisteredWebhooks(toApiCredentials(connection), shops[0].shop_cipher);
     const active = webhooks.some(
       (w) => w.event_type === "ORDER_STATUS_CHANGE" && w.address === `${env.appUrl}/api/tiktok/webhooks`
     );
@@ -46,7 +46,7 @@ export async function POST() {
     if (!shops.length) return NextResponse.json({ error: "No hay ninguna tienda conectada." }, { status: 404 });
 
     for (const shop of shops) {
-      await registerOrderStatusWebhook(connection.access_token, shop.shop_cipher, `${env.appUrl}/api/tiktok/webhooks`);
+      await registerOrderStatusWebhook(toApiCredentials(connection), shop.shop_cipher, `${env.appUrl}/api/tiktok/webhooks`);
     }
     return NextResponse.json({ status: "ok", address: `${env.appUrl}/api/tiktok/webhooks` });
   } catch (err) {

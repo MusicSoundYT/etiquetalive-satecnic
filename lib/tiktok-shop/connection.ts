@@ -2,7 +2,8 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { env } from "@/lib/env";
 import { exchangeAuthCode, refreshAccessToken, type TikTokTokenData } from "@/lib/tiktok-shop/auth";
-import { getAuthorizedShops, registerOrderStatusWebhook } from "@/lib/tiktok-shop/api-client";
+import { getAuthorizedShops, registerOrderStatusWebhook, type TikTokApiCredentials } from "@/lib/tiktok-shop/api-client";
+import { getAppCredentialsForTenant } from "@/lib/tiktok-shop/app-credentials";
 
 // Margen antes de que caduque el access_token (dura 7 días) para renovarlo
 // ya, en vez de esperar a que falle una llamada real.
@@ -19,7 +20,17 @@ export type TikTokShopConnection = {
   refresh_token: string;
   refresh_token_expires_at: string;
   granted_scopes: string[] | null;
+  // App propia del tenant (Partner Center) — necesaria para firmar cualquier
+  // llamada a la API con esta conexión. Se añade aquí (no solo en la tabla)
+  // para que cualquier código que ya tenga la conexión en la mano pueda
+  // construir credentials={accessToken, appKey, appSecret} sin otra consulta.
+  appKey: string;
+  appSecret: string;
 };
+
+export function toApiCredentials(connection: TikTokShopConnection): TikTokApiCredentials {
+  return { accessToken: connection.access_token, appKey: connection.appKey, appSecret: connection.appSecret };
+}
 
 export type TikTokShopRow = {
   id: string;
@@ -54,7 +65,8 @@ export async function saveConnectionFromAuthCode(
   tenantId: string,
   authCode: string
 ): Promise<TikTokShopConnection> {
-  const tokenData = await exchangeAuthCode(authCode);
+  const { appKey, appSecret } = await getAppCredentialsForTenant(tenantId);
+  const tokenData = await exchangeAuthCode(authCode, appKey, appSecret);
 
   const { data: connection, error } = await supabaseAdmin
     .from("tiktok_shop_connections")
@@ -65,17 +77,19 @@ export async function saveConnectionFromAuthCode(
     throw new Error(`No se pudo guardar la conexión de TikTok Shop: ${error?.message}`);
   }
 
-  await refreshShopsList(connection.id, tokenData.access_token);
+  const full = { ...connection, appKey, appSecret } as TikTokShopConnection;
+  await refreshShopsList(full);
 
-  return connection as TikTokShopConnection;
+  return full;
 }
 
-async function refreshShopsList(connectionId: string, accessToken: string): Promise<void> {
-  const shops = await getAuthorizedShops(accessToken);
+async function refreshShopsList(connection: TikTokShopConnection): Promise<void> {
+  const credentials = toApiCredentials(connection);
+  const shops = await getAuthorizedShops(credentials);
   for (const shop of shops) {
     await supabaseAdmin.from("tiktok_shop_shops").upsert(
       {
-        connection_id: connectionId,
+        connection_id: connection.id,
         shop_id: shop.id,
         shop_cipher: shop.cipher,
         shop_name: shop.name,
@@ -97,7 +111,7 @@ async function refreshShopsList(connectionId: string, accessToken: string): Prom
   // se pueda registrar, pero conectar/ver pedidos sigue funcionando.
   for (const shop of shops) {
     try {
-      await registerOrderStatusWebhook(accessToken, shop.cipher, `${env.appUrl}/api/tiktok/webhooks`);
+      await registerOrderStatusWebhook(credentials, shop.cipher, `${env.appUrl}/api/tiktok/webhooks`);
     } catch (err) {
       console.error("[TikTok Shop] No se pudo registrar el webhook de pedidos:", err);
     }
@@ -112,7 +126,9 @@ export async function getConnectionForTenant(tenantId: string): Promise<TikTokSh
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  return (data as TikTokShopConnection) ?? null;
+  if (!data) return null;
+  const { appKey, appSecret } = await getAppCredentialsForTenant(tenantId);
+  return { ...data, appKey, appSecret } as TikTokShopConnection;
 }
 
 export async function getShopsForConnection(connectionId: string): Promise<TikTokShopRow[]> {
@@ -135,7 +151,7 @@ export async function getValidAccessToken(tenantId: string): Promise<TikTokShopC
   const expiresAt = new Date(connection.access_token_expires_at).getTime();
   if (expiresAt - Date.now() > REFRESH_BUFFER_MS) return connection;
 
-  const tokenData = await refreshAccessToken(connection.refresh_token);
+  const tokenData = await refreshAccessToken(connection.refresh_token, connection.appKey, connection.appSecret);
   const { data: updated, error } = await supabaseAdmin
     .from("tiktok_shop_connections")
     .update(tokenDataToRow(tenantId, tokenData))
@@ -146,9 +162,10 @@ export async function getValidAccessToken(tenantId: string): Promise<TikTokShopC
     throw new Error(`No se pudo renovar el token de TikTok Shop: ${error?.message}`);
   }
 
-  await refreshShopsList(connection.id, tokenData.access_token);
+  const full = { ...updated, appKey: connection.appKey, appSecret: connection.appSecret } as TikTokShopConnection;
+  await refreshShopsList(full);
 
-  return updated as TikTokShopConnection;
+  return full;
 }
 
 export async function deleteConnection(tenantId: string): Promise<void> {

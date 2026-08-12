@@ -1,11 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { requireTikTokShopEnv } from "@/lib/env";
 import { verifyWebhookSignature, type TikTokOrderStatusChangePayload } from "@/lib/tiktok-shop/webhook";
 import { getOrderDetails } from "@/lib/tiktok-shop/api-client";
-import { getValidAccessToken, getShopsForConnection } from "@/lib/tiktok-shop/connection";
+import { getValidAccessToken, getShopsForConnection, toApiCredentials } from "@/lib/tiktok-shop/connection";
+import { getAppCredentialsForTenant } from "@/lib/tiktok-shop/app-credentials";
 import { ensureLocalOrder } from "@/lib/tiktok-shop/auction-orders";
 import { claimAndChargePrint } from "@/lib/orders/charge-print";
+
+/** A qué tenant pertenece una tienda de TikTok, o null si no la conocemos. */
+async function resolveTenantIdForShop(shopId: string): Promise<string | null> {
+  const { data: shopRow } = await supabaseAdmin
+    .from("tiktok_shop_shops")
+    .select("connection_id")
+    .eq("shop_id", shopId)
+    .maybeSingle();
+  if (!shopRow) return null;
+
+  const { data: connectionRow } = await supabaseAdmin
+    .from("tiktok_shop_connections")
+    .select("tenant_id")
+    .eq("id", shopRow.connection_id)
+    .maybeSingle();
+  return (connectionRow?.tenant_id as string) ?? null;
+}
 
 /**
  * TikTok llama aquí al instante cuando cambia el estado de un pedido
@@ -17,21 +34,40 @@ import { claimAndChargePrint } from "@/lib/orders/charge-print";
  * La firma va sobre el cuerpo EN CRUDO tal cual llega — por eso se lee con
  * req.text() y nunca con req.json() (reformatear el cuerpo invalidaría la
  * firma antes incluso de poder comprobarla).
+ *
+ * Cada tenant tiene su propia app de TikTok (su propio app_secret), así que
+ * hay que saber de qué tienda es el aviso ANTES de poder verificar su firma
+ * — se lee shop_id del cuerpo sin fiarse todavía de nada más, se busca qué
+ * tenant es esa tienda, y se verifica la firma con SU app_secret. Solo si
+ * la firma es válida se actúa sobre el resto del contenido. Mismo patrón
+ * que usan los webhooks multi-cuenta de GitHub Apps o Stripe Connect.
  */
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
-  const { appKey, appSecret } = requireTikTokShopEnv();
-  const signature = req.headers.get("authorization");
-
-  if (!verifyWebhookSignature(rawBody, appKey, appSecret, signature)) {
-    return NextResponse.json({ error: "Firma inválida." }, { status: 401 });
-  }
 
   let payload: TikTokOrderStatusChangePayload;
   try {
     payload = JSON.parse(rawBody);
   } catch {
     return NextResponse.json({ error: "Cuerpo inválido." }, { status: 400 });
+  }
+
+  const tenantId = await resolveTenantIdForShop(payload.shop_id);
+  if (!tenantId) {
+    console.error("[TikTok Shop] Webhook de una tienda sin conexión guardada:", payload.shop_id);
+    return NextResponse.json({ error: "Tienda desconocida." }, { status: 401 });
+  }
+
+  let appKey: string, appSecret: string;
+  try {
+    ({ appKey, appSecret } = await getAppCredentialsForTenant(tenantId));
+  } catch {
+    return NextResponse.json({ error: "Sin credenciales de app para este tenant." }, { status: 401 });
+  }
+
+  const signature = req.headers.get("authorization");
+  if (!verifyWebhookSignature(rawBody, appKey, appSecret, signature)) {
+    return NextResponse.json({ error: "Firma inválida." }, { status: 401 });
   }
 
   // Idempotencia: TikTok puede reenviar el mismo aviso. Si ya lo teníamos,
@@ -50,7 +86,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    await processOrderStatusChange(payload);
+    await processOrderStatusChange(tenantId, payload);
     await supabaseAdmin
       .from("tiktok_webhook_events")
       .update({ processed_at: new Date().toISOString() })
@@ -70,27 +106,9 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ status: "ok" });
 }
 
-async function processOrderStatusChange(payload: TikTokOrderStatusChangePayload): Promise<void> {
+async function processOrderStatusChange(tenantId: string, payload: TikTokOrderStatusChangePayload): Promise<void> {
   const orderId = payload.data?.order_id;
   if (!orderId) return;
-
-  const { data: shopRow } = await supabaseAdmin
-    .from("tiktok_shop_shops")
-    .select("connection_id")
-    .eq("shop_id", payload.shop_id)
-    .maybeSingle();
-  if (!shopRow) {
-    console.error("[TikTok Shop] Webhook de una tienda sin conexión guardada:", payload.shop_id);
-    return;
-  }
-
-  const { data: connectionRow } = await supabaseAdmin
-    .from("tiktok_shop_connections")
-    .select("tenant_id")
-    .eq("id", shopRow.connection_id)
-    .maybeSingle();
-  if (!connectionRow) return;
-  const tenantId = connectionRow.tenant_id as string;
 
   // ORDER_STATUS_CHANGE avisa de CUALQUIER cambio de estado del pedido
   // (pagado, enviado, entregado, completado...), no solo de que se acaba de
@@ -121,7 +139,7 @@ async function processOrderStatusChange(payload: TikTokOrderStatusChangePayload)
   const shop = shops.find((s) => s.shop_id === payload.shop_id);
   if (!shop) return;
 
-  const [order] = await getOrderDetails(connection.access_token, shop.shop_cipher, [orderId]);
+  const [order] = await getOrderDetails(toApiCredentials(connection), shop.shop_cipher, [orderId]);
   if (!order || order.order_type !== "AUCTION") return;
 
   const local = await ensureLocalOrder(tenantId, orderId, { shopId: shop.shop_id, prefetchedOrder: order });

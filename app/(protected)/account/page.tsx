@@ -6,6 +6,7 @@ import { ExtensionSettingsPanel } from "@/components/extension-settings-panel";
 import { MfaPanel } from "@/components/mfa-panel";
 import { TikTokShopPanel } from "@/components/tiktok-shop-panel";
 import { getConnectionForTenant, getShopsForConnection } from "@/lib/tiktok-shop/connection";
+import { getAppCredentialsForTenantOrNull } from "@/lib/tiktok-shop/app-credentials";
 import { ChangePasswordForm } from "./change-password-form";
 
 export default async function AccountPage({
@@ -18,6 +19,7 @@ export default async function AccountPage({
 
   const tiktokConnection = user.tenant_id ? await getConnectionForTenant(user.tenant_id) : null;
   const tiktokShops = tiktokConnection ? await getShopsForConnection(tiktokConnection.id) : [];
+  const tiktokAppCredentials = user.tenant_id ? await getAppCredentialsForTenantOrNull(user.tenant_id) : null;
 
   const { data: balance } = await supabaseAdmin
     .from("user_balances")
@@ -126,7 +128,12 @@ export default async function AccountPage({
         <h2 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
           API oficial de TikTok Shop
         </h2>
-        <TikTokShopPanel connection={tiktokConnection} shops={tiktokShops} initialStatus={tiktokStatus} />
+        <TikTokShopPanel
+          connection={tiktokConnection}
+          shops={tiktokShops}
+          initialStatus={tiktokStatus}
+          hasAppCredentials={Boolean(tiktokAppCredentials)}
+        />
       </section>
 
       <section>

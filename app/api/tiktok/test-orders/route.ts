@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth/session";
-import { getValidAccessToken, getShopsForConnection } from "@/lib/tiktok-shop/connection";
+import { getValidAccessToken, getShopsForConnection, toApiCredentials } from "@/lib/tiktok-shop/connection";
 import { searchOrders } from "@/lib/tiktok-shop/api-client";
 
 /**
@@ -22,7 +22,7 @@ export async function GET() {
 
     const results = [];
     for (const shop of shops) {
-      const data = await searchOrders(connection.access_token, shop.shop_cipher, { pageSize: 10 });
+      const data = await searchOrders(toApiCredentials(connection), shop.shop_cipher, { pageSize: 10 });
       results.push({
         shop: shop.shop_name || shop.shop_code || shop.shop_id,
         totalCount: data.total_count ?? null,

@@ -1,5 +1,4 @@
 import "server-only";
-import { requireTikTokShopEnv } from "@/lib/env";
 
 const AUTH_BASE = "https://auth.tiktok-shops.com";
 
@@ -17,9 +16,10 @@ export type TikTokTokenData = {
 
 async function callAuthEndpoint(
   path: string,
+  appKey: string,
+  appSecret: string,
   extraParams: Record<string, string>
 ): Promise<TikTokTokenData> {
-  const { appKey, appSecret } = requireTikTokShopEnv();
   const url = new URL(AUTH_BASE + path);
   url.searchParams.set("app_key", appKey);
   url.searchParams.set("app_secret", appSecret);
@@ -39,8 +39,8 @@ async function callAuthEndpoint(
  * llama la documentación de TikTok, NO es el "authorization_code" estándar
  * de OAuth. El auth_code caduca a los 30 minutos y es de un solo uso.
  */
-export async function exchangeAuthCode(authCode: string): Promise<TikTokTokenData> {
-  return callAuthEndpoint("/api/v2/token/get", {
+export async function exchangeAuthCode(authCode: string, appKey: string, appSecret: string): Promise<TikTokTokenData> {
+  return callAuthEndpoint("/api/v2/token/get", appKey, appSecret, {
     auth_code: authCode,
     grant_type: "authorized_code",
   });
@@ -52,8 +52,8 @@ export async function exchangeAuthCode(authCode: string): Promise<TikTokTokenDat
  * es un valor fijo), así que su fecha de caducidad se guarda y se vigila
  * por conexión en vez de asumir una duración constante.
  */
-export async function refreshAccessToken(refreshToken: string): Promise<TikTokTokenData> {
-  return callAuthEndpoint("/api/v2/token/refresh", {
+export async function refreshAccessToken(refreshToken: string, appKey: string, appSecret: string): Promise<TikTokTokenData> {
+  return callAuthEndpoint("/api/v2/token/refresh", appKey, appSecret, {
     refresh_token: refreshToken,
     grant_type: "refresh_token",
   });

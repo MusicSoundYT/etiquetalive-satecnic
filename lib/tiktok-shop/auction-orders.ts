@@ -1,6 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { getValidAccessToken, getShopsForConnection } from "@/lib/tiktok-shop/connection";
+import { getValidAccessToken, getShopsForConnection, toApiCredentials } from "@/lib/tiktok-shop/connection";
 import { getOrderDetails, type TikTokOrder } from "@/lib/tiktok-shop/api-client";
 
 export type AuctionOrderRow = {
@@ -134,7 +134,7 @@ export async function ensureLocalOrder(
     if (!shops.length) throw new Error("No hay ninguna tienda de TikTok Shop conectada.");
     const shop = shops[0];
     shopId = shopId ?? shop.shop_id;
-    [order] = await getOrderDetails(connection.access_token, shop.shop_cipher, [tiktokOrderId]);
+    [order] = await getOrderDetails(toApiCredentials(connection), shop.shop_cipher, [tiktokOrderId]);
   }
   if (!order) throw new Error("No se encontró ese pedido en TikTok Shop.");
 
