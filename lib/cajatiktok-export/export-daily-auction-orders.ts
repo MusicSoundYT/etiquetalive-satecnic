@@ -9,6 +9,30 @@ import { CAJATIKTOK_TENANTS, type CajaTikTokPair } from "@/lib/cajatiktok-export
 const ESTADO_ENVIO_DEFAULT = "En espera de envío";
 const ORDER_DETAILS_CHUNK_SIZE = 20;
 const CLIENTES_CHUNK_SIZE = 100;
+// Un directo grande de verdad puede rondar o superar los 250-300 pedidos —
+// se trocean también los guardados (no solo la lectura de más arriba) para
+// no depender de mandar cientos de filas de golpe en una sola petición.
+const UPSERT_CHUNK_SIZE = 200;
+
+async function upsertInChunks(
+  caja: ReturnType<typeof getCajaTikTokClient>,
+  table: string,
+  rows: Record<string, unknown>[],
+  onConflict: string,
+  selectCols?: string
+): Promise<Record<string, unknown>[]> {
+  const out: Record<string, unknown>[] = [];
+  for (let i = 0; i < rows.length; i += UPSERT_CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + UPSERT_CHUNK_SIZE);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const table_ = caja.from(table as any) as any;
+    const query = table_.upsert(chunk, { onConflict });
+    const { data, error } = selectCols ? await query.select(selectCols) : await query;
+    if (error) throw new Error(`No se pudo guardar en "${table}": ${error.message}`);
+    if (data) out.push(...data);
+  }
+  return out;
+}
 
 // Misma normalización que src/utils.js -> buyerKey() en el repo cajatiktok:
 // hay que llegar a la MISMA clave para el mismo cliente venga de un Excel
@@ -183,13 +207,9 @@ export async function exportAuctionOrdersForRange(
       updated_at: new Date().toISOString(),
     };
   });
-  const { data: clientesRows, error: clientesUpsertErr } = await caja
-    .from("clientes")
-    .upsert(clientesPayload, { onConflict: "nombre_key,grupo_id" })
-    .select("id,nombre_key");
-  if (clientesUpsertErr) throw new Error(`No se pudieron guardar los clientes: ${clientesUpsertErr.message}`);
+  const clientesRows = await upsertInChunks(caja, "clientes", clientesPayload, "nombre_key,grupo_id", "id,nombre_key");
   const clienteIdByKey: Record<string, string> = {};
-  for (const row of clientesRows ?? []) clienteIdByKey[row.nombre_key as string] = row.id as string;
+  for (const row of clientesRows) clienteIdByKey[row.nombre_key as string] = row.id as string;
 
   const importId = crypto.randomUUID();
 
@@ -219,10 +239,7 @@ export async function exportAuctionOrdersForRange(
       preparado: false,
     };
   });
-  const { error: asignacionesErr } = await caja
-    .from("asignaciones_caja")
-    .upsert(asignacionesPayload, { onConflict: "importacion_id,cliente_id" });
-  if (asignacionesErr) throw new Error(`No se pudieron guardar las asignaciones de caja: ${asignacionesErr.message}`);
+  await upsertInChunks(caja, "asignaciones_caja", asignacionesPayload, "importacion_id,cliente_id");
 
   const pedidosPayload = orders.map((o) => ({
     importacion_id: importId,
@@ -240,10 +257,7 @@ export async function exportAuctionOrdersForRange(
     marcado: false,
     producto: productNameById[o.external_order_id] || null,
   }));
-  const { error: pedidosErr } = await caja
-    .from("pedidos")
-    .upsert(pedidosPayload, { onConflict: "importacion_id,pedido_tiktok" });
-  if (pedidosErr) throw new Error(`No se pudieron guardar los pedidos: ${pedidosErr.message}`);
+  await upsertInChunks(caja, "pedidos", pedidosPayload, "importacion_id,pedido_tiktok");
 
   return { skipped: false, totalOrders: orders.length, totalClients: buyerKeys.length, importId };
 }
