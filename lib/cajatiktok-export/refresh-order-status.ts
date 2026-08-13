@@ -1,10 +1,9 @@
 import "server-only";
 import { getCajaTikTokClient } from "@/lib/cajatiktok-export/client";
-import { CAJATIKTOK_GRUPO_NOMBRE } from "@/lib/cajatiktok-export/export-daily-auction-orders";
 import { getValidAccessToken, getShopsForConnection, toApiCredentials } from "@/lib/tiktok-shop/connection";
 import { getOrderDetails } from "@/lib/tiktok-shop/api-client";
 import { mapTikTokStatusToEstadoEnvio } from "@/lib/cajatiktok-export/status-mapping";
-import { CAJATIKTOK_TENANT_ID } from "@/lib/cajatiktok-export/tenant";
+import { CAJATIKTOK_TENANTS, type CajaTikTokPair } from "@/lib/cajatiktok-export/tenant";
 
 const ORDER_DETAILS_CHUNK_SIZE = 20;
 const LOOKBACK_DAYS = 10;
@@ -13,18 +12,38 @@ const LOOKBACK_DAYS = 10;
 // crezca sin límite con el paso de los días.
 const ESTADOS_TERMINALES = ["Cancelado", "Entregado"];
 
-export async function refreshCajaTikTokOrderStatus(): Promise<{ checked: number; updated: number }> {
-  const tenantId = CAJATIKTOK_TENANT_ID;
+export type RefreshResult = { grupoNombre: string; checked: number; updated: number; error?: string };
 
+/** Una pasada por cada cliente configurado — si uno falla, no frena a los demás. */
+export async function refreshCajaTikTokOrderStatus(): Promise<RefreshResult[]> {
+  const results: RefreshResult[] = [];
+  for (const pair of CAJATIKTOK_TENANTS) {
+    try {
+      const { checked, updated } = await refreshOneClient(pair);
+      results.push({ grupoNombre: pair.grupoNombre, checked, updated });
+    } catch (err) {
+      results.push({
+        grupoNombre: pair.grupoNombre,
+        checked: 0,
+        updated: 0,
+        error: err instanceof Error ? err.message : "Error desconocido.",
+      });
+    }
+  }
+  return results;
+}
+
+async function refreshOneClient(pair: CajaTikTokPair): Promise<{ checked: number; updated: number }> {
+  const { tenantId, grupoNombre } = pair;
   const caja = getCajaTikTokClient();
 
   const { data: grupo, error: grupoErr } = await caja
     .from("grupos")
     .select("id")
-    .eq("nombre", CAJATIKTOK_GRUPO_NOMBRE)
+    .eq("nombre", grupoNombre)
     .maybeSingle();
-  if (grupoErr) throw new Error(`No se pudo buscar el grupo "${CAJATIKTOK_GRUPO_NOMBRE}" en Caja TikTok: ${grupoErr.message}`);
-  if (!grupo) throw new Error(`No existe el grupo "${CAJATIKTOK_GRUPO_NOMBRE}" en Caja TikTok.`);
+  if (grupoErr) throw new Error(`No se pudo buscar el grupo "${grupoNombre}" en Caja TikTok: ${grupoErr.message}`);
+  if (!grupo) throw new Error(`No existe el grupo "${grupoNombre}" en Caja TikTok.`);
   const grupoId = grupo.id as string;
 
   const lookbackIso = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60_000).toISOString();

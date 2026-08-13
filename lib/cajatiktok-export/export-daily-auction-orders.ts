@@ -4,9 +4,8 @@ import { getCajaTikTokClient } from "@/lib/cajatiktok-export/client";
 import { getValidAccessToken, getShopsForConnection, toApiCredentials } from "@/lib/tiktok-shop/connection";
 import { getOrderDetails } from "@/lib/tiktok-shop/api-client";
 import { madridDayRangeUtc, yesterdayMadridDate } from "@/lib/utils/madrid-date";
-import { CAJATIKTOK_TENANT_ID } from "@/lib/cajatiktok-export/tenant";
+import { CAJATIKTOK_TENANTS, type CajaTikTokPair } from "@/lib/cajatiktok-export/tenant";
 
-export const CAJATIKTOK_GRUPO_NOMBRE = "Woow Insólito";
 const ESTADO_ENVIO_DEFAULT = "En espera de envío";
 const ORDER_DETAILS_CHUNK_SIZE = 20;
 
@@ -73,22 +72,52 @@ function defaultRangeNombreArchivo(startUtc: string, endUtc: string): string {
   return `Importacion_Manual_${dd}-${mm}-${yyyy}_${fmt(startUtc)}-${fmt(endUtc)}.xlsx`;
 }
 
-export async function exportDailyAuctionOrders(
-  dateMadrid?: string
-): Promise<{ skipped: boolean; date: string; totalOrders: number; totalClients: number; importId?: string }> {
+export type DailyExportResult = {
+  grupoNombre: string;
+  skipped: boolean;
+  date: string;
+  totalOrders: number;
+  totalClients: number;
+  importId?: string;
+  error?: string;
+};
+
+/**
+ * Una pasada por CADA cliente configurado (ver tenant.ts) — si uno falla, no
+ * debe frenar a los demás, cada uno tiene su propio resultado/error.
+ */
+export async function exportDailyAuctionOrders(dateMadrid?: string): Promise<DailyExportResult[]> {
   const date = dateMadrid ?? yesterdayMadridDate();
   const { startUtc, endUtc } = madridDayRangeUtc(date);
   const [yyyy, mm, dd] = date.split("-");
-  const result = await exportAuctionOrdersForRange(startUtc, endUtc, `Auto_TikTok_${dd}-${mm}-${yyyy}.xlsx`);
-  return { ...result, date };
+  const nombreArchivo = `Auto_TikTok_${dd}-${mm}-${yyyy}.xlsx`;
+
+  const results: DailyExportResult[] = [];
+  for (const pair of CAJATIKTOK_TENANTS) {
+    try {
+      const result = await exportAuctionOrdersForRange(pair, startUtc, endUtc, nombreArchivo);
+      results.push({ grupoNombre: pair.grupoNombre, date, ...result });
+    } catch (err) {
+      results.push({
+        grupoNombre: pair.grupoNombre,
+        date,
+        skipped: false,
+        totalOrders: 0,
+        totalClients: 0,
+        error: err instanceof Error ? err.message : "Error desconocido.",
+      });
+    }
+  }
+  return results;
 }
 
 export async function exportAuctionOrdersForRange(
+  pair: CajaTikTokPair,
   startUtc: string,
   endUtc: string,
   nombreArchivo?: string
 ): Promise<{ skipped: boolean; totalOrders: number; totalClients: number; importId?: string }> {
-  const tenantId = CAJATIKTOK_TENANT_ID;
+  const { tenantId, grupoNombre } = pair;
 
   const { data: orderRows, error: ordersErr } = await supabaseAdmin
     .from("orders")
@@ -113,10 +142,10 @@ export async function exportAuctionOrdersForRange(
   const { data: grupo, error: grupoErr } = await caja
     .from("grupos")
     .select("id")
-    .eq("nombre", CAJATIKTOK_GRUPO_NOMBRE)
+    .eq("nombre", grupoNombre)
     .maybeSingle();
-  if (grupoErr) throw new Error(`No se pudo buscar el grupo "${CAJATIKTOK_GRUPO_NOMBRE}" en Caja TikTok: ${grupoErr.message}`);
-  if (!grupo) throw new Error(`No existe el grupo "${CAJATIKTOK_GRUPO_NOMBRE}" en Caja TikTok.`);
+  if (grupoErr) throw new Error(`No se pudo buscar el grupo "${grupoNombre}" en Caja TikTok: ${grupoErr.message}`);
+  if (!grupo) throw new Error(`No existe el grupo "${grupoNombre}" en Caja TikTok.`);
   const grupoId = grupo.id as string;
 
   const buyerKeys = [...new Set(orders.map((o) => buyerKey(o.cliente)))];
