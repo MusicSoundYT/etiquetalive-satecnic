@@ -8,6 +8,7 @@ import { CAJATIKTOK_TENANTS, type CajaTikTokPair } from "@/lib/cajatiktok-export
 
 const ESTADO_ENVIO_DEFAULT = "En espera de envío";
 const ORDER_DETAILS_CHUNK_SIZE = 20;
+const CLIENTES_CHUNK_SIZE = 100;
 
 // Misma normalización que src/utils.js -> buyerKey() en el repo cajatiktok:
 // hay que llegar a la MISMA clave para el mismo cliente venga de un Excel
@@ -149,14 +150,23 @@ export async function exportAuctionOrdersForRange(
   const grupoId = grupo.id as string;
 
   const buyerKeys = [...new Set(orders.map((o) => buyerKey(o.cliente)))];
-  const { data: existingClientes, error: clientesReadErr } = await caja
-    .from("clientes")
-    .select("nombre_key,caja_preferente,ultima_caja_usada,total_importaciones")
-    .eq("grupo_id", grupoId)
-    .in("nombre_key", buyerKeys);
-  if (clientesReadErr) throw new Error(`No se pudieron leer los clientes existentes: ${clientesReadErr.message}`);
+  // Trozeado: un directo entero de golpe (importación por rango) puede
+  // traer cientos de clientes distintos — visto en producción, un .in() con
+  // 268 nombres a la vez hace que la URL de la petición falle directamente
+  // ("fetch failed", sin ni siquiera llegar a responder Supabase). Con
+  // lotes pequeños no pasaba porque la exportación diaria nunca junta
+  // tantos de golpe.
   const existingByKey: Record<string, { caja_preferente: number | null; ultima_caja_usada: number | null; total_importaciones: number }> = {};
-  for (const row of existingClientes ?? []) existingByKey[row.nombre_key as string] = row as never;
+  for (let i = 0; i < buyerKeys.length; i += CLIENTES_CHUNK_SIZE) {
+    const chunk = buyerKeys.slice(i, i + CLIENTES_CHUNK_SIZE);
+    const { data: existingClientes, error: clientesReadErr } = await caja
+      .from("clientes")
+      .select("nombre_key,caja_preferente,ultima_caja_usada,total_importaciones")
+      .eq("grupo_id", grupoId)
+      .in("nombre_key", chunk);
+    if (clientesReadErr) throw new Error(`No se pudieron leer los clientes existentes: ${clientesReadErr.message}`);
+    for (const row of existingClientes ?? []) existingByKey[row.nombre_key as string] = row as never;
+  }
 
   const clientesPayload = buyerKeys.map((key) => {
     const order = orders.find((o) => buyerKey(o.cliente) === key)!;
