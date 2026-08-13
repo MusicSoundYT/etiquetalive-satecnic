@@ -106,7 +106,14 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ status: "ok" });
 }
 
-async function refreshClienteIfNowAvailable(tenantId: string, orderRowId: string, tiktokOrderId: string): Promise<void> {
+/**
+ * Si el pedido ya existía pero se quedó con CLIENTE_DESCONOCIDO (ver más
+ * abajo, no se cobra/imprime hasta tener el nombre), este aviso posterior
+ * es la oportunidad de completarlo. Si ya hay nombre disponible Y el pedido
+ * todavía no se había cobrado, se cobra/imprime aquí mismo — es la primera
+ * vez que de verdad tiene todos los datos.
+ */
+async function refreshClienteAndMaybePrint(tenantId: string, orderRowId: string, tiktokOrderId: string): Promise<void> {
   try {
     const connection = await getValidAccessToken(tenantId);
     const shops = await getShopsForConnection(connection.id);
@@ -115,7 +122,14 @@ async function refreshClienteIfNowAvailable(tenantId: string, orderRowId: string
       if (!order) continue;
       const cliente = clienteFromOrder(order);
       if (cliente === CLIENTE_DESCONOCIDO) return;
-      await supabaseAdmin.from("orders").update({ cliente }).eq("id", orderRowId);
+
+      const { data: fullOrder } = await supabaseAdmin
+        .from("orders")
+        .update({ cliente })
+        .eq("id", orderRowId)
+        .select("*")
+        .single();
+      if (fullOrder && fullOrder.impresiones_cobrables === 0) await claimAndChargePrint(fullOrder, tenantId);
       return;
     }
   } catch (err) {
@@ -150,7 +164,7 @@ async function processOrderStatusChange(tenantId: string, payload: TikTokOrderSt
     // pedido, nada más lo vuelve a tocar. Se aprovecha este aviso posterior
     // (normalmente el cambio a pagado/enviado, segundos o minutos después)
     // para completarlo, sin cobrar ni imprimir de nuevo.
-    if (existing.cliente === CLIENTE_DESCONOCIDO) await refreshClienteIfNowAvailable(tenantId, existing.id, orderId);
+    if (existing.cliente === CLIENTE_DESCONOCIDO) await refreshClienteAndMaybePrint(tenantId, existing.id, orderId);
     return;
   }
 
@@ -186,6 +200,15 @@ async function processOrderStatusChange(tenantId: string, payload: TikTokOrderSt
     );
     return;
   }
+
+  // TikTok puede no tener todavía la dirección de envío rellena en el
+  // instante de este primer aviso (visto en producción) — se prefiere
+  // esperar al siguiente aviso (normalmente segundos o minutos después, el
+  // cambio a pagado/enviado) antes que cobrar/imprimir una etiqueta con el
+  // nombre en blanco. El pedido ya queda guardado (ensureLocalOrder de
+  // arriba); refreshClienteAndMaybePrint es quien completa el cobro/
+  // impresión en cuanto haya nombre.
+  if (clienteFromOrder(order) === CLIENTE_DESCONOCIDO) return;
 
   const { data: fullOrder } = await supabaseAdmin
     .from("orders")
