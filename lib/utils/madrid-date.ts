@@ -40,3 +40,10 @@ export function yesterdayMadridDate(): string {
   madridWallClockNow.setUTCDate(madridWallClockNow.getUTCDate() - 1);
   return madridWallClockNow.toISOString().slice(0, 10);
 }
+
+/** Fecha de hoy (YYYY-MM-DD) según el reloj de Madrid, no el del servidor. */
+export function todayMadridDate(): string {
+  const now = new Date();
+  const madridWallClockNow = new Date(now.getTime() + getMadridUtcOffsetMinutes(now) * 60_000);
+  return madridWallClockNow.toISOString().slice(0, 10);
+}

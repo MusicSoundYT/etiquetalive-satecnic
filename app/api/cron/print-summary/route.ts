@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireCronSecret } from "@/lib/env";
 import { verifyCronSecret } from "@/lib/auth/verify-cron-secret";
 import { getDailyPrintSummary } from "@/lib/print-summary/daily-print-summary";
+import { getMonthlyBillingSummary, type MonthlyBillingSummary } from "@/lib/admin/monthly-billing-summary";
+import { todayMadridDate } from "@/lib/utils/madrid-date";
 import { sendTelegramMessage } from "@/lib/telegram/send-telegram-message";
 
 // Pensado para el mismo disparador externo diario que ya usa
@@ -16,8 +18,12 @@ export async function GET(req: NextRequest) {
 
   try {
     const summary = await getDailyPrintSummary(date);
-    await sendTelegramMessage(formatSummaryMessage(summary));
-    return NextResponse.json(summary);
+    // Mes en curso (Europe/Madrid) - se calcula al vuelo por rango de fechas,
+    // así que se resetea solo cada día 1, sin ningún contador que limpiar a mano.
+    const [year, month] = todayMadridDate().split("-").map(Number);
+    const billing = await getMonthlyBillingSummary(year, month);
+    await sendTelegramMessage(`${formatSummaryMessage(summary)}\n\n${formatBillingMessage(billing)}`);
+    return NextResponse.json({ summary, billing });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error desconocido.";
     console.error("[Resumen de impresiones] Error generando el resumen diario:", err);
@@ -30,4 +36,19 @@ function formatSummaryMessage(summary: Awaited<ReturnType<typeof getDailyPrintSu
   if (!summary.total) return `🏷️ Etiquetas impresas el ${summary.date}: ninguna.`;
   const lines = summary.rows.map((r) => `• ${r.tenantName}: ${r.count}`);
   return `🏷️ Etiquetas impresas el ${summary.date} (${summary.total} en total):\n${lines.join("\n")}`;
+}
+
+function formatEuros(cents: number): string {
+  return (cents / 100).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "€";
+}
+
+function formatBillingMessage(billing: MonthlyBillingSummary): string {
+  const monthName = new Intl.DateTimeFormat("es-ES", { month: "long", timeZone: "UTC" }).format(
+    new Date(Date.UTC(billing.year, billing.month - 1, 1))
+  );
+  return (
+    `💰 Este mes (${monthName}): ${formatEuros(billing.rechargedCents)} recargados · ` +
+    `${formatEuros(billing.totalCents)} facturado por etiquetas · ` +
+    `${formatEuros(billing.pendingDebtCents)} deuda pendiente`
+  );
 }
