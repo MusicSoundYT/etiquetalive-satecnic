@@ -24,9 +24,16 @@ export type AuctionOrderRow = {
   } | null;
 };
 
-function clienteFromOrder(order: TikTokOrder): string {
+// Placeholder cuando TikTok todavía no ha rellenado la dirección de envío
+// del pedido — visto en producción: en el primer aviso (segundos después de
+// crearse el pedido) recipient_address puede venir vacío, y TikTok lo
+// completa unos minutos después. Se exporta para poder detectar más tarde
+// "a este pedido le sigue faltando el nombre" y refrescarlo.
+export const CLIENTE_DESCONOCIDO = "—";
+
+export function clienteFromOrder(order: TikTokOrder): string {
   const addr = order.recipient_address;
-  return addr?.name || [addr?.first_name, addr?.last_name].filter(Boolean).join(" ") || "—";
+  return addr?.name || [addr?.first_name, addr?.last_name].filter(Boolean).join(" ") || CLIENTE_DESCONOCIDO;
 }
 
 function priceCentsFromOrder(order: TikTokOrder): number {
