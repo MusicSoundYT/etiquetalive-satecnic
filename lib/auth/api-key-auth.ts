@@ -22,7 +22,7 @@ export async function validateApiKey(req: NextRequest): Promise<string | null> {
   const keyHash = createHash("sha256").update(key).digest("hex");
   const { data } = await supabaseAdmin
     .from("api_keys")
-    .select("id, tenant_id, status, expires_at, revoked_at, use_count")
+    .select("id, tenant_id, status, expires_at, revoked_at, use_count, last_used_at")
     .eq("key_hash", keyHash)
     .maybeSingle();
 
@@ -33,17 +33,25 @@ export async function validateApiKey(req: NextRequest): Promise<string | null> {
   // así que es el único valor en el que se puede confiar — el primero podría
   // venir falsificado por el propio cliente.
   const ip = req.headers.get("x-forwarded-for")?.split(",").pop()?.trim() || null;
-  // No se espera esta escritura: es solo trazabilidad (último uso/contador),
-  // no debe añadir latencia a una petición que la extensión hace constantemente.
-  supabaseAdmin
-    .from("api_keys")
-    .update({
-      last_used_at: new Date().toISOString(),
-      last_used_ip: ip,
-      use_count: (data.use_count ?? 0) + 1,
-    })
-    .eq("id", data.id)
-    .then(() => {}, () => {});
+  // Esta ruta la llama la extensión varias veces por minuto durante un
+  // directo — escribir en cada petición dobla las consultas a una base de
+  // datos que ya va muy justa de recursos (proyecto en t4g.nano). Al ser
+  // solo trazabilidad (nadie cobra ni factura a partir de esto), basta con
+  // refrescarlo como mucho una vez por minuto — use_count queda aproximado
+  // a propósito, no es un contador exacto.
+  const lastUsedAgoMs = data.last_used_at ? Date.now() - new Date(data.last_used_at).getTime() : Infinity;
+  if (lastUsedAgoMs > 60_000) {
+    // No se espera esta escritura: no debe añadir latencia a la petición.
+    supabaseAdmin
+      .from("api_keys")
+      .update({
+        last_used_at: new Date().toISOString(),
+        last_used_ip: ip,
+        use_count: (data.use_count ?? 0) + 1,
+      })
+      .eq("id", data.id)
+      .then(() => {}, () => {});
+  }
 
   return data.tenant_id as string;
 }
