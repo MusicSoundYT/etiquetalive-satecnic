@@ -4,11 +4,35 @@ import { getCajaTikTokClient } from "@/lib/cajatiktok-export/client";
 import { getValidAccessToken, getShopsForConnection, toApiCredentials } from "@/lib/tiktok-shop/connection";
 import { getOrderDetails } from "@/lib/tiktok-shop/api-client";
 import { madridDayRangeUtc, yesterdayMadridDate } from "@/lib/utils/madrid-date";
-import { CAJATIKTOK_TENANT_ID } from "@/lib/cajatiktok-export/tenant";
+import { CAJATIKTOK_TENANTS, type CajaTikTokPair } from "@/lib/cajatiktok-export/tenant";
 
-export const CAJATIKTOK_GRUPO_NOMBRE = "Woow Insólito";
 const ESTADO_ENVIO_DEFAULT = "En espera de envío";
 const ORDER_DETAILS_CHUNK_SIZE = 20;
+const CLIENTES_CHUNK_SIZE = 100;
+// Un directo grande de verdad puede rondar o superar los 250-300 pedidos —
+// se trocean también los guardados (no solo la lectura de más arriba) para
+// no depender de mandar cientos de filas de golpe en una sola petición.
+const UPSERT_CHUNK_SIZE = 200;
+
+async function upsertInChunks(
+  caja: ReturnType<typeof getCajaTikTokClient>,
+  table: string,
+  rows: Record<string, unknown>[],
+  onConflict: string,
+  selectCols?: string
+): Promise<Record<string, unknown>[]> {
+  const out: Record<string, unknown>[] = [];
+  for (let i = 0; i < rows.length; i += UPSERT_CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + UPSERT_CHUNK_SIZE);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const table_ = caja.from(table as any) as any;
+    const query = table_.upsert(chunk, { onConflict });
+    const { data, error } = selectCols ? await query.select(selectCols) : await query;
+    if (error) throw new Error(`No se pudo guardar en "${table}": ${error.message}`);
+    if (data) out.push(...data);
+  }
+  return out;
+}
 
 // Misma normalización que src/utils.js -> buyerKey() en el repo cajatiktok:
 // hay que llegar a la MISMA clave para el mismo cliente venga de un Excel
@@ -73,22 +97,52 @@ function defaultRangeNombreArchivo(startUtc: string, endUtc: string): string {
   return `Importacion_Manual_${dd}-${mm}-${yyyy}_${fmt(startUtc)}-${fmt(endUtc)}.xlsx`;
 }
 
-export async function exportDailyAuctionOrders(
-  dateMadrid?: string
-): Promise<{ skipped: boolean; date: string; totalOrders: number; totalClients: number; importId?: string }> {
+export type DailyExportResult = {
+  grupoNombre: string;
+  skipped: boolean;
+  date: string;
+  totalOrders: number;
+  totalClients: number;
+  importId?: string;
+  error?: string;
+};
+
+/**
+ * Una pasada por CADA cliente configurado (ver tenant.ts) — si uno falla, no
+ * debe frenar a los demás, cada uno tiene su propio resultado/error.
+ */
+export async function exportDailyAuctionOrders(dateMadrid?: string): Promise<DailyExportResult[]> {
   const date = dateMadrid ?? yesterdayMadridDate();
   const { startUtc, endUtc } = madridDayRangeUtc(date);
   const [yyyy, mm, dd] = date.split("-");
-  const result = await exportAuctionOrdersForRange(startUtc, endUtc, `Auto_TikTok_${dd}-${mm}-${yyyy}.xlsx`);
-  return { ...result, date };
+  const nombreArchivo = `Auto_TikTok_${dd}-${mm}-${yyyy}.xlsx`;
+
+  const results: DailyExportResult[] = [];
+  for (const pair of CAJATIKTOK_TENANTS) {
+    try {
+      const result = await exportAuctionOrdersForRange(pair, startUtc, endUtc, nombreArchivo);
+      results.push({ grupoNombre: pair.grupoNombre, date, ...result });
+    } catch (err) {
+      results.push({
+        grupoNombre: pair.grupoNombre,
+        date,
+        skipped: false,
+        totalOrders: 0,
+        totalClients: 0,
+        error: err instanceof Error ? err.message : "Error desconocido.",
+      });
+    }
+  }
+  return results;
 }
 
 export async function exportAuctionOrdersForRange(
+  pair: CajaTikTokPair,
   startUtc: string,
   endUtc: string,
   nombreArchivo?: string
 ): Promise<{ skipped: boolean; totalOrders: number; totalClients: number; importId?: string }> {
-  const tenantId = CAJATIKTOK_TENANT_ID;
+  const { tenantId, grupoNombre } = pair;
 
   const { data: orderRows, error: ordersErr } = await supabaseAdmin
     .from("orders")
@@ -113,21 +167,30 @@ export async function exportAuctionOrdersForRange(
   const { data: grupo, error: grupoErr } = await caja
     .from("grupos")
     .select("id")
-    .eq("nombre", CAJATIKTOK_GRUPO_NOMBRE)
+    .eq("nombre", grupoNombre)
     .maybeSingle();
-  if (grupoErr) throw new Error(`No se pudo buscar el grupo "${CAJATIKTOK_GRUPO_NOMBRE}" en Caja TikTok: ${grupoErr.message}`);
-  if (!grupo) throw new Error(`No existe el grupo "${CAJATIKTOK_GRUPO_NOMBRE}" en Caja TikTok.`);
+  if (grupoErr) throw new Error(`No se pudo buscar el grupo "${grupoNombre}" en Caja TikTok: ${grupoErr.message}`);
+  if (!grupo) throw new Error(`No existe el grupo "${grupoNombre}" en Caja TikTok.`);
   const grupoId = grupo.id as string;
 
   const buyerKeys = [...new Set(orders.map((o) => buyerKey(o.cliente)))];
-  const { data: existingClientes, error: clientesReadErr } = await caja
-    .from("clientes")
-    .select("nombre_key,caja_preferente,ultima_caja_usada,total_importaciones")
-    .eq("grupo_id", grupoId)
-    .in("nombre_key", buyerKeys);
-  if (clientesReadErr) throw new Error(`No se pudieron leer los clientes existentes: ${clientesReadErr.message}`);
+  // Trozeado: un directo entero de golpe (importación por rango) puede
+  // traer cientos de clientes distintos — visto en producción, un .in() con
+  // 268 nombres a la vez hace que la URL de la petición falle directamente
+  // ("fetch failed", sin ni siquiera llegar a responder Supabase). Con
+  // lotes pequeños no pasaba porque la exportación diaria nunca junta
+  // tantos de golpe.
   const existingByKey: Record<string, { caja_preferente: number | null; ultima_caja_usada: number | null; total_importaciones: number }> = {};
-  for (const row of existingClientes ?? []) existingByKey[row.nombre_key as string] = row as never;
+  for (let i = 0; i < buyerKeys.length; i += CLIENTES_CHUNK_SIZE) {
+    const chunk = buyerKeys.slice(i, i + CLIENTES_CHUNK_SIZE);
+    const { data: existingClientes, error: clientesReadErr } = await caja
+      .from("clientes")
+      .select("nombre_key,caja_preferente,ultima_caja_usada,total_importaciones")
+      .eq("grupo_id", grupoId)
+      .in("nombre_key", chunk);
+    if (clientesReadErr) throw new Error(`No se pudieron leer los clientes existentes: ${clientesReadErr.message}`);
+    for (const row of existingClientes ?? []) existingByKey[row.nombre_key as string] = row as never;
+  }
 
   const clientesPayload = buyerKeys.map((key) => {
     const order = orders.find((o) => buyerKey(o.cliente) === key)!;
@@ -144,13 +207,9 @@ export async function exportAuctionOrdersForRange(
       updated_at: new Date().toISOString(),
     };
   });
-  const { data: clientesRows, error: clientesUpsertErr } = await caja
-    .from("clientes")
-    .upsert(clientesPayload, { onConflict: "nombre_key,grupo_id" })
-    .select("id,nombre_key");
-  if (clientesUpsertErr) throw new Error(`No se pudieron guardar los clientes: ${clientesUpsertErr.message}`);
+  const clientesRows = await upsertInChunks(caja, "clientes", clientesPayload, "nombre_key,grupo_id", "id,nombre_key");
   const clienteIdByKey: Record<string, string> = {};
-  for (const row of clientesRows ?? []) clienteIdByKey[row.nombre_key as string] = row.id as string;
+  for (const row of clientesRows) clienteIdByKey[row.nombre_key as string] = row.id as string;
 
   const importId = crypto.randomUUID();
 
@@ -180,10 +239,7 @@ export async function exportAuctionOrdersForRange(
       preparado: false,
     };
   });
-  const { error: asignacionesErr } = await caja
-    .from("asignaciones_caja")
-    .upsert(asignacionesPayload, { onConflict: "importacion_id,cliente_id" });
-  if (asignacionesErr) throw new Error(`No se pudieron guardar las asignaciones de caja: ${asignacionesErr.message}`);
+  await upsertInChunks(caja, "asignaciones_caja", asignacionesPayload, "importacion_id,cliente_id");
 
   const pedidosPayload = orders.map((o) => ({
     importacion_id: importId,
@@ -201,10 +257,7 @@ export async function exportAuctionOrdersForRange(
     marcado: false,
     producto: productNameById[o.external_order_id] || null,
   }));
-  const { error: pedidosErr } = await caja
-    .from("pedidos")
-    .upsert(pedidosPayload, { onConflict: "importacion_id,pedido_tiktok" });
-  if (pedidosErr) throw new Error(`No se pudieron guardar los pedidos: ${pedidosErr.message}`);
+  await upsertInChunks(caja, "pedidos", pedidosPayload, "importacion_id,pedido_tiktok");
 
   return { skipped: false, totalOrders: orders.length, totalClients: buyerKeys.length, importId };
 }

@@ -14,17 +14,24 @@ export async function GET(req: NextRequest) {
   const date = req.nextUrl.searchParams.get("date") ?? undefined;
 
   try {
-    const result = await exportDailyAuctionOrders(date);
-    // Se avisa siempre, aunque no haya nada que exportar — así un silencio
-    // total nunca se puede confundir con "el cron ni siquiera ha corrido".
-    if (result.skipped) {
-      await sendTelegramMessage(`ℹ️ Caja TikTok: sin pedidos de subasta que exportar del ${result.date} (no hubo directo).`);
-    } else {
-      await sendTelegramMessage(
-        `✅ Caja TikTok: exportados ${result.totalOrders} pedidos de subasta (${result.totalClients} clientas) del ${result.date}.`
-      );
+    const results = await exportDailyAuctionOrders(date);
+    // Un aviso POR CADA cliente, con su nombre — así un "no se ha importado
+    // nada" siempre deja claro de qué cuenta habla, y un fallo en uno no
+    // oculta el resultado de los demás. Se avisa siempre, aunque no haya
+    // nada que exportar — un silencio total nunca se puede confundir con
+    // "el cron ni siquiera ha corrido".
+    for (const result of results) {
+      if (result.error) {
+        await sendTelegramMessage(`🚨 Caja TikTok (${result.grupoNombre}): ha fallado la exportación diaria — ${result.error}`);
+      } else if (result.skipped) {
+        await sendTelegramMessage(`ℹ️ Caja TikTok (${result.grupoNombre}): sin pedidos de subasta que exportar del ${result.date} (no hubo directo).`);
+      } else {
+        await sendTelegramMessage(
+          `✅ Caja TikTok (${result.grupoNombre}): exportados ${result.totalOrders} pedidos de subasta (${result.totalClients} clientas) del ${result.date}.`
+        );
+      }
     }
-    return NextResponse.json(result);
+    return NextResponse.json(results);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error desconocido.";
     console.error("[Caja TikTok] Error en la exportación diaria:", err);
