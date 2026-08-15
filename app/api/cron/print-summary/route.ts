@@ -47,7 +47,8 @@ function formatBillingMessage(billing: MonthlyBillingSummary): string {
     new Date(Date.UTC(billing.year, billing.month - 1, 1))
   );
   return (
-    `💰 Este mes (${monthName}): ${formatEuros(billing.rechargedCents)} recargados · ` +
+    `💰 Este mes (${monthName}): ${billing.ordersCount} etiquetas impresas en total · ` +
+    `${formatEuros(billing.rechargedCents)} recargados · ` +
     `${formatEuros(billing.totalCents)} facturado por etiquetas · ` +
     `${formatEuros(billing.pendingDebtCents)} deuda pendiente`
   );
