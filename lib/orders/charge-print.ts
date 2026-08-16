@@ -117,7 +117,7 @@ export async function claimAndChargePrint(
 
   // Reclamo atómico: solo la petición que consigue pasar impresiones_cobrables
   // de 0 a 1 procede a cobrar. Evita doble cobro por condición de carrera.
-  const { data: claimed } = await supabaseAdmin
+  const { data: claimed, error: claimError } = await supabaseAdmin
     .from("orders")
     .update({
       impresiones_cobrables: 1,
@@ -129,6 +129,17 @@ export async function claimAndChargePrint(
     .select("*")
     .maybeSingle();
 
+  // OJO: un error real aquí (p. ej. un corte de conexión pasajero con la
+  // base de datos) también deja `claimed` en null, exactamente igual que
+  // cuando otra petición concurrente ya lo había cobrado — visto en
+  // producción: varios pedidos con nombre real de cliente se quedaron sin
+  // cobrar/imprimir para siempre porque este caso se trataba igual que una
+  // carrera normal, sin lanzar error ni dejar rastro en ningún log. Se
+  // distingue explícitamente: solo se asume "ya cobrado por otra petición"
+  // si Supabase no informó de ningún error.
+  if (claimError) {
+    throw new Error(`No se pudo marcar el pedido ${order.tk} como cobrado: ${claimError.message}`);
+  }
   if (!claimed) {
     // Otra petición concurrente se adelantó a cobrarlo.
     return { status: "already_charged", order };
