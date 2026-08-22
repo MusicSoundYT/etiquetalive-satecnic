@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getCajaTikTokClient } from "@/lib/cajatiktok-export/client";
 import { getValidAccessToken, getShopsForConnection, toApiCredentials } from "@/lib/tiktok-shop/connection";
 import { getOrderDetails } from "@/lib/tiktok-shop/api-client";
-import { madridDayRangeUtc, yesterdayMadridDate } from "@/lib/utils/madrid-date";
+import { businessDayRangeUtc, yesterdayMadridDate } from "@/lib/utils/madrid-date";
 import { CAJATIKTOK_TENANTS, type CajaTikTokPair } from "@/lib/cajatiktok-export/tenant";
 
 const ESTADO_ENVIO_DEFAULT = "En espera de envío";
@@ -113,7 +113,11 @@ export type DailyExportResult = {
  */
 export async function exportDailyAuctionOrders(dateMadrid?: string): Promise<DailyExportResult[]> {
   const date = dateMadrid ?? yesterdayMadridDate();
-  const { startUtc, endUtc } = madridDayRangeUtc(date);
+  // Ventana de 08:00 a 08:00 (no medianoche a medianoche): un directo que
+  // empieza de noche y acaba de madrugada del día natural siguiente cae
+  // entero en el mismo "día de negocio", justo antes de que el equipo entre
+  // a trabajar a las 8h — ver businessDayRangeUtc.
+  const { startUtc, endUtc } = businessDayRangeUtc(date);
   const [yyyy, mm, dd] = date.split("-");
   const nombreArchivo = `Auto_TikTok_${dd}-${mm}-${yyyy}.xlsx`;
 
