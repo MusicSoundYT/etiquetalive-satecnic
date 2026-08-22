@@ -161,10 +161,10 @@ export async function getOrderDetails(credentials: TikTokApiCredentials, shopCip
  * Crea el paquete de envío ("Ship by Seller") para uno o varios pedidos del
  * mismo cliente a la vez — confirmado a mano en Seller Center que unificar
  * varios pedidos en una sola etiqueta es soportado por TikTok. El campo
- * confirmado en producción es "order_id" (no "order_ids"): un primer intento
- * con "order_ids" devolvió el mismo error que con el cuerpo vacío ("OrderId
- * is a required field"), así que TikTok lo ignoraba por completo. Sigue
- * llevando varios IDs dentro (un array), solo cambia el nombre de la clave.
+ * confirmado en producción es "order_id" (no "order_ids"), y confirmado
+ * también que espera un string, no un array ("type incorrect, expected
+ * type:string") — igual que el resto de esta API acepta varios IDs como
+ * texto separado por comas en vez de un array (ver getOrderDetails).
  */
 export type TikTokPackage = { package_id: string };
 
@@ -178,7 +178,7 @@ export async function createShippingPackage(
     path: "/fulfillment/202309/packages",
     credentials,
     query: { shop_cipher: shopCipher },
-    bodyString: JSON.stringify({ order_id: orderIds }),
+    bodyString: JSON.stringify({ order_id: orderIds.join(",") }),
   });
 }
 
