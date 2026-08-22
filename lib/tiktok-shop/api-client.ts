@@ -156,3 +156,47 @@ export async function getOrderDetails(credentials: TikTokApiCredentials, shopCip
   });
   return data.orders;
 }
+
+/**
+ * Crea el paquete de envío ("Ship by Seller") para uno o varios pedidos del
+ * mismo cliente a la vez — confirmado a mano en Seller Center que unificar
+ * varios pedidos en una sola etiqueta es soportado por TikTok. El nombre
+ * exacto del campo para varios IDs no está confirmado contra documentación
+ * (la de TikTok no es accesible por scraping) — se ha deducido del mensaje
+ * de error real de la API ("OrderId is a required field...") y de la
+ * convención del resto de esta API (snake_case, plural con "_ids" para
+ * listas, ver getOrderDetails). Si el nombre real difiere, TikTok devolverá
+ * el mismo tipo de error de validación (sin crear nada), fácil de corregir
+ * en el primer uso real.
+ */
+export type TikTokPackage = { package_id: string };
+
+export async function createShippingPackage(
+  credentials: TikTokApiCredentials,
+  shopCipher: string,
+  orderIds: string[]
+): Promise<TikTokPackage> {
+  return callApi<TikTokPackage>({
+    method: "POST",
+    path: "/fulfillment/202309/packages",
+    credentials,
+    query: { shop_cipher: shopCipher },
+    bodyString: JSON.stringify({ order_ids: orderIds }),
+  });
+}
+
+export type TikTokShippingDocument = { doc_url: string };
+
+/** Documento de envío (PDF) ya generado de un paquete creado con createShippingPackage. */
+export async function getPackageShippingDocument(
+  credentials: TikTokApiCredentials,
+  shopCipher: string,
+  packageId: string
+): Promise<TikTokShippingDocument> {
+  return callApi<TikTokShippingDocument>({
+    method: "GET",
+    path: `/fulfillment/202309/packages/${packageId}/shipping_documents`,
+    credentials,
+    query: { shop_cipher: shopCipher, document_type: "SHIPPING_LABEL" },
+  });
+}

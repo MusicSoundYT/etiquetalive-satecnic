@@ -184,12 +184,15 @@ export async function exportAuctionOrdersForRange(
   // ("fetch failed", sin ni siquiera llegar a responder Supabase). Con
   // lotes pequeños no pasaba porque la exportación diaria nunca junta
   // tantos de golpe.
-  const existingByKey: Record<string, { caja_preferente: number | null; ultima_caja_usada: number | null; total_importaciones: number }> = {};
+  const existingByKey: Record<
+    string,
+    { caja_preferente: number | null; ultima_caja_usada: number | null; total_importaciones: number; caja_reservada: number | null }
+  > = {};
   for (let i = 0; i < buyerKeys.length; i += CLIENTES_CHUNK_SIZE) {
     const chunk = buyerKeys.slice(i, i + CLIENTES_CHUNK_SIZE);
     const { data: existingClientes, error: clientesReadErr } = await caja
       .from("clientes")
-      .select("nombre_key,caja_preferente,ultima_caja_usada,total_importaciones")
+      .select("nombre_key,caja_preferente,ultima_caja_usada,total_importaciones,caja_reservada")
       .eq("grupo_id", grupoId)
       .in("nombre_key", chunk);
     if (clientesReadErr) throw new Error(`No se pudieron leer los clientes existentes: ${clientesReadErr.message}`);
@@ -230,15 +233,22 @@ export async function exportAuctionOrdersForRange(
   const asignacionesPayload = buyerKeys.map((key) => {
     const existing = existingByKey[key];
     const habitual = (existing?.total_importaciones ?? 0) > 0;
+    // Si el cliente ya tenía caja reservada (le quedaban pedidos pendientes
+    // de un día anterior), se le asigna directamente aquí — el gerente pidió
+    // que la caja "no se finalice hasta cerrar el último pedido del
+    // cliente", así que debe seguir siendo la misma aunque pasen varios días.
+    const cajaReservada = existing?.caja_reservada ?? null;
     return {
       importacion_id: importId,
       cliente_id: clienteIdByKey[key],
       grupo_id: grupoId,
-      numero_caja: null,
+      numero_caja: cajaReservada,
       tipo_asignacion: habitual ? "Cliente habitual" : "Cliente nuevo",
-      motivo: habitual
-        ? "Con histórico (solo informativo). La caja se asignará al escanear su primer producto."
-        : "Sin histórico. La caja se asignará al escanear su primer producto.",
+      motivo: cajaReservada
+        ? "Caja reservada de pedidos pendientes anteriores."
+        : habitual
+          ? "Con histórico (solo informativo). La caja se asignará al escanear su primer producto."
+          : "Sin histórico. La caja se asignará al escanear su primer producto.",
       manual: false,
       preparado: false,
     };
@@ -252,7 +262,7 @@ export async function exportAuctionOrdersForRange(
     pedido_tiktok: o.external_order_id,
     importe: o.precio_cents / 100,
     importe_texto: (o.precio_cents / 100).toFixed(2),
-    caja_asignada: null,
+    caja_asignada: existingByKey[buyerKey(o.cliente)]?.caja_reservada ?? null,
     escaneado: false,
     fecha_escaneo: null,
     estado: "pendiente",
