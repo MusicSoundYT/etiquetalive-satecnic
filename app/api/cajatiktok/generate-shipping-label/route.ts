@@ -57,10 +57,16 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ packageId: pkg.package_id, docUrl: doc.doc_url });
   } catch (err) {
+    // TikTok rechaza con este código si el pedido ya se envió antes (por
+    // ejemplo, a mano desde Seller Center) — no es un fallo nuestro, solo
+    // significa que ya no hace falta generar nada nuevo. Se distingue para
+    // que Caja TikTok pueda marcarlo como hecho en vez de repetir el error
+    // cada vez que alguien vuelva a pulsar el botón.
+    const message = err instanceof Error ? err.message : "Error desconocido.";
+    if (message.includes("code 21011006") || message.includes("already shipped")) {
+      return NextResponse.json({ alreadyShipped: true });
+    }
     console.error("[Caja TikTok] Error generando etiqueta de envío:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Error desconocido." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
