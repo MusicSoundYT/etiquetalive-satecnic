@@ -3,14 +3,23 @@ import { requireCajaTikTokExportEnv } from "@/lib/env";
 import { verifyCronSecret } from "@/lib/auth/verify-cron-secret";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getValidAccessToken, getShopsForConnection, toApiCredentials } from "@/lib/tiktok-shop/connection";
-import { createShippingPackage, getPackageShippingDocument } from "@/lib/tiktok-shop/api-client";
+import { createShippingPackage, getPackageShippingDocument, type TikTokApiCredentials } from "@/lib/tiktok-shop/api-client";
 import { findByGrupoNombre } from "@/lib/cajatiktok-export/tenant";
 
+type LabelResult = { orderId: string; docUrl?: string; alreadyShipped?: boolean; error?: string };
+
 /**
- * Genera (o reutiliza) la etiqueta de envío unificada de uno o varios
- * pedidos del mismo cliente — piloto de Caja TikTok, vía la Edge Function
- * "tiktok-bridge" (que ya resuelve el grupo del que llama a partir de su
- * sesión, así que aquí solo hace falta confiar en el grupoNombre recibido).
+ * Genera la etiqueta de envío de cada pedido recibido — piloto de Caja
+ * TikTok, vía la Edge Function "tiktok-bridge" (que ya resuelve el grupo del
+ * que llama a partir de su sesión, así que aquí solo hace falta confiar en
+ * el grupoNombre recibido).
+ *
+ * TikTok solo acepta UN pedido por paquete (confirmado en producción: ni un
+ * array ni varios IDs separados por comas funcionan en "order_id"), así que
+ * de momento se genera un PDF por pedido en vez de uno unificado — pendiente
+ * de encontrar el campo real para combinarlos (necesita documentación de
+ * TikTok que no ha sido posible consultar). Un fallo en un pedido no debe
+ * impedir que se generen los demás.
  *
  * Detrás de un interruptor por tenant (tenants.shipping_label_api_enabled)
  * para poder desactivarlo sin desplegar nada si da problemas durante la
@@ -45,28 +54,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "La generación de etiqueta de envío no está activada para este cliente." }, { status: 403 });
   }
 
+  let credentials: TikTokApiCredentials;
+  let shopCipher: string;
   try {
     const connection = await getValidAccessToken(pair.tenantId);
     const shops = await getShopsForConnection(connection.id);
     if (!shops.length) throw new Error("No hay ninguna tienda de TikTok Shop conectada.");
-    const shop = shops[0];
-    const credentials = toApiCredentials(connection);
-
-    const pkg = await createShippingPackage(credentials, shop.shop_cipher, orderIds);
-    const doc = await getPackageShippingDocument(credentials, shop.shop_cipher, pkg.package_id);
-
-    return NextResponse.json({ packageId: pkg.package_id, docUrl: doc.doc_url });
+    shopCipher = shops[0].shop_cipher;
+    credentials = toApiCredentials(connection);
   } catch (err) {
-    // TikTok rechaza con este código si el pedido ya se envió antes (por
-    // ejemplo, a mano desde Seller Center) — no es un fallo nuestro, solo
-    // significa que ya no hace falta generar nada nuevo. Se distingue para
-    // que Caja TikTok pueda marcarlo como hecho en vez de repetir el error
-    // cada vez que alguien vuelva a pulsar el botón.
-    const message = err instanceof Error ? err.message : "Error desconocido.";
-    if (message.includes("code 21011006") || message.includes("already shipped")) {
-      return NextResponse.json({ alreadyShipped: true });
-    }
-    console.error("[Caja TikTok] Error generando etiqueta de envío:", err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[Caja TikTok] Error obteniendo la conexión de TikTok Shop:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Error desconocido." },
+      { status: 500 }
+    );
   }
+
+  const results: LabelResult[] = [];
+  for (const orderId of orderIds) {
+    try {
+      const pkg = await createShippingPackage(credentials, shopCipher, orderId);
+      const doc = await getPackageShippingDocument(credentials, shopCipher, pkg.package_id);
+      results.push({ orderId, docUrl: doc.doc_url });
+    } catch (err) {
+      // TikTok rechaza con este código si el pedido ya se envió antes (por
+      // ejemplo, a mano desde Seller Center) — no es un fallo, solo
+      // significa que ya no hace falta generar nada nuevo para ese pedido.
+      const message = err instanceof Error ? err.message : "Error desconocido.";
+      if (message.includes("code 21011006") || message.includes("already shipped")) {
+        results.push({ orderId, alreadyShipped: true });
+      } else {
+        console.error(`[Caja TikTok] Error generando etiqueta de envío del pedido ${orderId}:`, err);
+        results.push({ orderId, error: message });
+      }
+    }
+  }
+
+  return NextResponse.json({ results });
 }
