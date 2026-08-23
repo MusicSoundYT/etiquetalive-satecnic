@@ -1,4 +1,4 @@
-const VERSION = "el-1.6.44-auction";
+const VERSION = "el-1.6.45-auction";
 const API_BASE = "https://etiquetalivetiktok.satecnic.es";
 const DEFAULT_CONFIG = {
   configVersion: "local-default-1",
@@ -123,6 +123,21 @@ let lastSellerReloadAt = 0;
 const SELLER_RELOAD_COOLDOWN_MS = 6000;
 
 function notifySellerOrderTabs(event) {
+  try {
+    // Con estación configurada, la pestaña de Seller está desactivada a
+    // propósito (ver order-watcher.js) — avisarla o recargarla no serviría
+    // de nada, solo molestaría a quien esté mirando esa pestaña por otro
+    // motivo. Sin estación, se comporta igual que siempre.
+    chrome.storage.local.get(["el_station_id"], (cfg) => {
+      if ((cfg.el_station_id || "").trim()) return;
+      notifySellerOrderTabsUnconditional(event);
+    });
+  } catch (e) {
+    console.log("[EtiquetaLive] background: excepción comprobando estación en notifySellerOrderTabs", e);
+  }
+}
+
+function notifySellerOrderTabsUnconditional(event) {
   try {
     chrome.tabs.query({ url: "https://seller-es.tiktok.com/order*" }, (tabs) => {
       console.log("[EtiquetaLive] background: pestañas de Seller encontradas:", (tabs || []).map((t) => t.id));
