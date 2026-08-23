@@ -41,8 +41,14 @@ function printLabelHtml(html: string) {
  * automática a los pedidos de esa tienda — sin esto, cualquier pestaña con
  * la misma cuenta de EtiquetaLive imprimía TODOS los pedidos, de cualquier
  * tienda.
+ *
+ * stationId (opcional): cuando hay DOS directos simultáneos colgando de la
+ * MISMA tienda (mismo shop_id — no distinguible por shopId), el servidor
+ * usa este valor para solo entregar a este ordenador los pedidos cuyo
+ * cliente coincida con un ganador visto por la extensión en esa misma
+ * estación. Sin esto, se comporta exactamente igual que siempre.
  */
-export function TikTokPrintWatcher({ shopId }: { shopId?: string | null }) {
+export function TikTokPrintWatcher({ shopId, stationId }: { shopId?: string | null; stationId?: string | null }) {
   const [active, setActive] = useState(true);
   const [printedCount, setPrintedCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +62,10 @@ export function TikTokPrintWatcher({ shopId }: { shopId?: string | null }) {
 
     async function poll() {
       try {
-        const query = shopId ? `?shop_id=${encodeURIComponent(shopId)}` : "";
+        const params = new URLSearchParams();
+        if (shopId) params.set("shop_id", shopId);
+        if (stationId) params.set("station_id", stationId);
+        const query = params.toString() ? `?${params.toString()}` : "";
         const res = await fetch(`/api/tiktok/pending-print${query}`);
         if (!res.ok) return;
         const data = await res.json();
@@ -73,7 +82,7 @@ export function TikTokPrintWatcher({ shopId }: { shopId?: string | null }) {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [active, shopId]);
+  }, [active, shopId, stationId]);
 
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">

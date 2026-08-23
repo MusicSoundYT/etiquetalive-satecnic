@@ -17,6 +17,7 @@ const btn = document.getElementById('btn');
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const sessionRow = document.getElementById('sessionRow');
+const stationId = document.getElementById('stationId');
 
 function setMsg(t, txt) { msg.className = t; msg.textContent = txt; msg.style.display = 'block'; }
 
@@ -64,9 +65,14 @@ stopBtn.onclick = () => {
   });
 };
 
-chrome.storage.local.get(['el_api_key', 'el_print_session_active'], r => {
+stationId.onchange = () => {
+  chrome.storage.local.set({ el_station_id: stationId.value.trim() });
+};
+
+chrome.storage.local.get(['el_api_key', 'el_print_session_active', 'el_station_id'], r => {
   if (r.el_api_key) { key.value = r.el_api_key; btn.click(); }
   if (r.el_api_key) sessionRow.style.display = 'flex';
   startBtn.disabled = Boolean(r.el_print_session_active);
   stopBtn.disabled = !r.el_print_session_active;
+  if (r.el_station_id) stationId.value = r.el_station_id;
 });

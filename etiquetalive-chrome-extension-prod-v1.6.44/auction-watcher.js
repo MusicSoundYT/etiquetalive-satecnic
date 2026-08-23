@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.43-auction";
+  const VERSION = "el-1.6.44-auction";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const SCAN_INTERVAL_MS = 2500;
   const MUTATION_DEBOUNCE_MS = 1000;
@@ -70,6 +70,18 @@
     });
   }
 
+  // Nombre de "estación" (ordenador) configurado a mano en el popup de la
+  // extensión — solo hace falta rellenarlo cuando este tenant tiene DOS
+  // directos simultáneos colgando de la misma tienda de TikTok. Vacío por
+  // defecto: sin esto, el servidor no filtra nada (comportamiento de
+  // siempre). Ver popup.js.
+  function getStationId() {
+    return new Promise(resolve => {
+      try { chrome.storage.local.get(["el_station_id"], r => resolve((r.el_station_id || "").trim())); }
+      catch(e) { resolve(""); }
+    });
+  }
+
   function sendRuntimeMessage(message) {
     try {
       if (!chrome?.runtime?.id) return;
@@ -80,6 +92,8 @@
   async function postAuctionEvent(event) {
     const apiKey = await getApiKey();
     if (!apiKey) return; // sin clave configurada todavía, el servidor la rechazaría igualmente
+    const stationId = await getStationId();
+    if (stationId) event.stationId = stationId;
     const body = JSON.stringify({ version: VERSION, event });
     try {
       await fetch(apiBase() + "/api/auction/event", {

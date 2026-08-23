@@ -17,6 +17,11 @@ const eventSchema = z.object({
   pageUrl: z.string().trim().max(2000).optional(),
   source: z.string().trim().max(80).optional(),
   detectedAt: z.string().optional(),
+  // Nombre de "estación" configurado a mano en la extensión (ver popup.js) —
+  // opcional, solo lo mandan quienes lo hayan configurado. Permite luego
+  // filtrar en /api/tiktok/pending-print qué pedidos corresponden a qué
+  // ordenador cuando hay dos directos simultáneos en la misma tienda.
+  stationId: z.string().trim().max(80).optional(),
 });
 
 const bodySchema = z.object({
@@ -65,6 +70,7 @@ export async function POST(req: NextRequest) {
     page_url: event.pageUrl ?? null,
     capture_source: event.source ?? null,
     html_fragment_size: event.raw?.length ?? null,
+    station_id: event.stationId || null,
   });
 
   return withCors(req, NextResponse.json({ status: "ok" }));
