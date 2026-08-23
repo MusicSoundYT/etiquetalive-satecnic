@@ -107,3 +107,18 @@ export async function getOrdersStats(tenantId: string): Promise<OrdersStats> {
     reimpresiones: Number(row.reimpresiones),
   };
 }
+
+/** Igual que getOrdersStats, pero solo de los pedidos detectados por la API de TikTok Shop (pantalla "Pedidos (API)"). */
+export async function getOrdersStatsApi(tenantId: string): Promise<OrdersStats> {
+  const { data, error } = await supabaseAdmin.rpc("get_orders_stats_api", { p_tenant_id: tenantId });
+  if (error || !data || data.length === 0) {
+    return { total: 0, impresos: 0, pendientes: 0, reimpresiones: 0 };
+  }
+  const row = data[0];
+  return {
+    total: row.total,
+    impresos: row.impresos,
+    pendientes: row.pendientes,
+    reimpresiones: Number(row.reimpresiones),
+  };
+}

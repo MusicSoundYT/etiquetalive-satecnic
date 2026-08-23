@@ -2,7 +2,9 @@ import Link from "next/link";
 import { requireSession } from "@/lib/auth/require-session";
 import { getConnectionForTenant, getShopsForConnection } from "@/lib/tiktok-shop/connection";
 import { listAuctionOrders } from "@/lib/tiktok-shop/auction-orders";
+import { getOrdersStatsApi } from "@/lib/orders/list";
 import { TikTokShopWorkspace } from "@/components/tiktok-shop-workspace";
+import { OrdersStatsCards } from "@/components/orders-stats";
 
 export default async function PedidosApiPage() {
   const user = await requireSession();
@@ -18,6 +20,8 @@ export default async function PedidosApiPage() {
     connection && user.tenant_id
       ? await listAuctionOrders(user.tenant_id, { shopId: initialShopId })
       : { orders: [], nextPageToken: null };
+
+  const stats = user.tenant_id ? await getOrdersStatsApi(user.tenant_id) : null;
 
   return (
     <div className="mx-auto max-w-7xl space-y-8">
@@ -42,6 +46,8 @@ export default async function PedidosApiPage() {
           </Link>
         </div>
       )}
+
+      {connection && stats && <OrdersStatsCards stats={stats} />}
 
       {connection && (
         <TikTokShopWorkspace
