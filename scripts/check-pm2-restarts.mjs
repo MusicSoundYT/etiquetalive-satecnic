@@ -34,7 +34,7 @@ async function sendTelegram(text) {
     const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text }),
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, parse_mode: "HTML", disable_web_page_preview: true }),
     });
     if (!res.ok) console.error("[check-pm2-restarts] Error enviando a Telegram:", res.status, await res.text());
   } catch (err) {
@@ -57,7 +57,7 @@ const delta = state.lastCount == null ? 0 : restartCount - state.lastCount;
 
 if (delta >= RESTART_THRESHOLD) {
   await sendTelegram(
-    `🚨 ${APP_NAME}: se ha reiniciado ${delta} veces desde la última comprobación (estado actual: ${status}, total histórico: ${restartCount}) — puede estar en bucle de caídas.`
+    `🚨 <b>${APP_NAME} en bucle de caídas</b>\nSe ha reiniciado <b>${delta}</b> veces desde la última comprobación.\nEstado actual: ${status} · Total histórico: ${restartCount}`
   );
 }
 

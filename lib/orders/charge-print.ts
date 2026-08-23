@@ -4,7 +4,7 @@ import { adjustBalance, getPriceCentsForTier, getUserBalance } from "@/lib/walle
 import { maybeAutoRecharge } from "@/lib/wallet/auto-recharge";
 import { maybeAutoUpgradeTier } from "@/lib/wallet/tier-upgrade";
 import { sendLowBalanceEmail } from "@/lib/mail/send-low-balance-email";
-import { sendTelegramMessage } from "@/lib/telegram/send-telegram-message";
+import { sendTelegramMessage, escapeHtml } from "@/lib/telegram/send-telegram-message";
 
 // Margen de gracia: se permite que el saldo llegue hasta -2€ antes de
 // bloquear la impresión (p. ej. un cobro de 0,10€ con saldo a 0€ no debe
@@ -23,7 +23,7 @@ async function notifyLowBalanceOnce(userId: string, email: string | undefined) {
   try {
     if (!(await claimNotifyCooldown(userId))) return;
     await sendLowBalanceEmail(email);
-    await sendTelegramMessage(`💸 Saldo bajo: ${email} está a punto de quedarse sin saldo para imprimir.`);
+    await sendTelegramMessage(`💸 <b>Saldo bajo</b>\n${escapeHtml(email)} está a punto de quedarse sin saldo para imprimir.`);
   } catch {
     // Un fallo al avisar nunca debe romper la respuesta de cobro.
   }
@@ -32,7 +32,7 @@ async function notifyLowBalanceOnce(userId: string, email: string | undefined) {
 async function notifyBlockedOnce(userId: string, email: string | undefined, reason: string) {
   try {
     if (!(await claimNotifyCooldown(userId))) return;
-    await sendTelegramMessage(`⛔ Cuenta bloqueada: ${email ?? userId} ha intentado imprimir — ${reason}`);
+    await sendTelegramMessage(`⛔ <b>Cuenta bloqueada</b>\n${escapeHtml(email ?? userId)} ha intentado imprimir — ${escapeHtml(reason)}`);
   } catch {
     // Un fallo al avisar nunca debe romper la respuesta de cobro.
   }

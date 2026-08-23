@@ -3,7 +3,7 @@ import { requireCronSecret } from "@/lib/env";
 import { verifyCronSecret } from "@/lib/auth/verify-cron-secret";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getValidAccessToken } from "@/lib/tiktok-shop/connection";
-import { sendTelegramMessage } from "@/lib/telegram/send-telegram-message";
+import { sendTelegramMessage, escapeHtml } from "@/lib/telegram/send-telegram-message";
 
 // El cobro/impresión automática por API depende por completo de que el
 // access_token de cada conexión se pueda seguir renovando — si el
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
       // el cooldown, para que una rotura FUTURA vuelva a avisar.
       if (conn.broken_notified_at) {
         await sendTelegramMessage(
-          `✅ TikTok Shop: la conexión de "${conn.seller_name ?? conn.tenant_id}" ha vuelto a funcionar.`
+          `✅ <b>TikTok Shop reconectado</b>\nLa conexión de "${escapeHtml(String(conn.seller_name ?? conn.tenant_id))}" ha vuelto a funcionar.`
         );
         await supabaseAdmin.from("tiktok_shop_connections").update({ broken_notified_at: null }).eq("id", conn.id);
       }
@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
       if (conn.broken_notified_at) continue;
 
       await sendTelegramMessage(
-        `🚨 TikTok Shop: la conexión de "${conn.seller_name ?? conn.tenant_id}" ha dejado de funcionar — ${message}\n\nEl cobro/impresión automático por API está parado hasta reconectar.`
+        `🚨 <b>TikTok Shop desconectado</b>\nLa conexión de "${escapeHtml(String(conn.seller_name ?? conn.tenant_id))}" ha dejado de funcionar — ${escapeHtml(message)}\n\n⚠️ El cobro/impresión automático por API está parado hasta reconectar.`
       );
       await supabaseAdmin
         .from("tiktok_shop_connections")

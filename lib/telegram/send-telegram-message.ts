@@ -12,6 +12,20 @@ function getTelegramConfig(): { botToken: string; chatId: string } | null {
   return { botToken, chatId };
 }
 
+/**
+ * Los mensajes usan HTML de Telegram (negrita, líneas separadas) para que
+ * se lean mejor que un bloque de texto plano — cualquier dato variable
+ * (nombre de cliente, email, mensaje de error...) que se meta dentro debe
+ * pasar antes por escapeHtml, o un "<" o "&" suelto en un nombre real
+ * rompería el formato del aviso entero.
+ */
+export function escapeHtml(s: string): string {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 export async function sendTelegramMessage(text: string): Promise<void> {
   const config = getTelegramConfig();
   if (!config) {
@@ -22,7 +36,7 @@ export async function sendTelegramMessage(text: string): Promise<void> {
     const res = await fetch(`https://api.telegram.org/bot${config.botToken}/sendMessage`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: config.chatId, text }),
+      body: JSON.stringify({ chat_id: config.chatId, text, parse_mode: "HTML", disable_web_page_preview: true }),
     });
     if (!res.ok) {
       console.error("[Telegram] Error enviando aviso:", res.status, await res.text());

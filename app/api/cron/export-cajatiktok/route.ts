@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireCajaTikTokExportEnv } from "@/lib/env";
 import { verifyCronSecret } from "@/lib/auth/verify-cron-secret";
 import { exportDailyAuctionOrders } from "@/lib/cajatiktok-export/export-daily-auction-orders";
-import { sendTelegramMessage } from "@/lib/telegram/send-telegram-message";
+import { sendTelegramMessage, escapeHtml } from "@/lib/telegram/send-telegram-message";
 
 // Pensado para ser llamado por un disparador externo (no hay Vercel Cron en
 // este hosting) una vez al día a las 08:00 Europe/Madrid. Protegido por
@@ -21,13 +21,14 @@ export async function GET(req: NextRequest) {
     // nada que exportar — un silencio total nunca se puede confundir con
     // "el cron ni siquiera ha corrido".
     for (const result of results) {
+      const grupo = escapeHtml(result.grupoNombre);
       if (result.error) {
-        await sendTelegramMessage(`🚨 Caja TikTok (${result.grupoNombre}): ha fallado la exportación diaria — ${result.error}`);
+        await sendTelegramMessage(`🚨 <b>Caja TikTok — ${grupo}</b>\nHa fallado la exportación diaria — ${escapeHtml(result.error)}`);
       } else if (result.skipped) {
-        await sendTelegramMessage(`ℹ️ Caja TikTok (${result.grupoNombre}): sin pedidos de subasta que exportar del ${result.date} (no hubo directo).`);
+        await sendTelegramMessage(`ℹ️ <b>Caja TikTok — ${grupo}</b>\nSin pedidos de subasta que exportar del ${escapeHtml(result.date)} (no hubo directo).`);
       } else {
         await sendTelegramMessage(
-          `✅ Caja TikTok (${result.grupoNombre}): exportados ${result.totalOrders} pedidos de subasta (${result.totalClients} clientas) del ${result.date}.`
+          `✅ <b>Caja TikTok — ${grupo}</b>\n${escapeHtml(result.date)}: <b>${result.totalOrders}</b> pedidos de subasta · <b>${result.totalClients}</b> clientas`
         );
       }
     }
@@ -35,7 +36,7 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error desconocido.";
     console.error("[Caja TikTok] Error en la exportación diaria:", err);
-    await sendTelegramMessage(`🚨 Caja TikTok: ha fallado la exportación diaria — ${message}`);
+    await sendTelegramMessage(`🚨 <b>Caja TikTok</b>\nHa fallado la exportación diaria — ${escapeHtml(message)}`);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

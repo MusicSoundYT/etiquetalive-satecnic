@@ -4,7 +4,7 @@ import { verifyCronSecret } from "@/lib/auth/verify-cron-secret";
 import { getDailyPrintSummary } from "@/lib/print-summary/daily-print-summary";
 import { getMonthlyBillingSummary, type MonthlyBillingSummary } from "@/lib/admin/monthly-billing-summary";
 import { todayMadridDate } from "@/lib/utils/madrid-date";
-import { sendTelegramMessage } from "@/lib/telegram/send-telegram-message";
+import { sendTelegramMessage, escapeHtml } from "@/lib/telegram/send-telegram-message";
 
 // Pensado para el mismo disparador externo diario que ya usa
 // export-cajatiktok, a las 08:00 Europe/Madrid. No tiene relación con Caja
@@ -27,15 +27,15 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error desconocido.";
     console.error("[Resumen de impresiones] Error generando el resumen diario:", err);
-    await sendTelegramMessage(`🚨 Resumen de impresiones: ha fallado la generación del resumen diario — ${message}`);
+    await sendTelegramMessage(`🚨 <b>Resumen de impresiones</b>\nHa fallado la generación del resumen diario — ${escapeHtml(message)}`);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
 function formatSummaryMessage(summary: Awaited<ReturnType<typeof getDailyPrintSummary>>): string {
-  if (!summary.total) return `🏷️ Etiquetas impresas el ${summary.date}: ninguna.`;
-  const lines = summary.rows.map((r) => `• ${r.tenantName}: ${r.count}`);
-  return `🏷️ Etiquetas impresas el ${summary.date} (${summary.total} en total):\n${lines.join("\n")}`;
+  if (!summary.total) return `🏷️ <b>Etiquetas impresas — ${escapeHtml(summary.date)}</b>\nNinguna.`;
+  const lines = summary.rows.map((r) => `• ${escapeHtml(r.tenantName)}: <b>${r.count}</b>`);
+  return `🏷️ <b>Etiquetas impresas — ${escapeHtml(summary.date)}</b>\nTotal: <b>${summary.total}</b>\n\n${lines.join("\n")}`;
 }
 
 function formatEuros(cents: number): string {
@@ -47,9 +47,10 @@ function formatBillingMessage(billing: MonthlyBillingSummary): string {
     new Date(Date.UTC(billing.year, billing.month - 1, 1))
   );
   return (
-    `💰 Este mes (${monthName}): ${billing.ordersCount} etiquetas impresas en total · ` +
-    `${formatEuros(billing.rechargedCents)} recargados · ` +
-    `${formatEuros(billing.totalCents)} facturado por etiquetas · ` +
-    `${formatEuros(billing.pendingDebtCents)} deuda pendiente`
+    `💰 <b>Facturación — ${escapeHtml(monthName)}</b>\n` +
+    `🏷️ Etiquetas: <b>${billing.ordersCount}</b>\n` +
+    `💳 Recargado: <b>${formatEuros(billing.rechargedCents)}</b>\n` +
+    `📄 Facturado: <b>${formatEuros(billing.totalCents)}</b>\n` +
+    `⚠️ Deuda pendiente: <b>${formatEuros(billing.pendingDebtCents)}</b>`
   );
 }
