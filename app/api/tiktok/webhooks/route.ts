@@ -135,9 +135,24 @@ async function refreshClienteAndMaybePrint(tenantId: string, orderRowId: string,
       // seguridad de force-print-stale-orders pasados 10 min).
       if (cliente === CLIENTE_DESCONOCIDO) return;
 
+      // Visto en producción: un pedido detectado antes por la extensión
+      // (raw_payload.source="chrome_extension") llegaba a este mismo aviso de
+      // webhook una y otra vez (aquí, en processOrderStatusChange, por la
+      // rama "ya existe") sin que raw_payload.source se corrigiera nunca a
+      // "tiktok_shop_api" — a diferencia de ensureLocalOrder, que sí lo hace,
+      // pero que solo se llama para pedidos NUEVOS, nunca para éstos. Como la
+      // exportación diaria a Caja TikTok (y la pantalla "Pedidos (API)") solo
+      // incluyen pedidos con source="tiktok_shop_api", esos pedidos —reales,
+      // cobrados, con etiqueta impresa— quedaban excluidos para siempre de
+      // Caja TikTok. Aquí, con el pedido ya confirmado por la API oficial, se
+      // corrige el origen exactamente igual que hace ensureLocalOrder.
       const { data: fullOrder } = await supabaseAdmin
         .from("orders")
-        .update({ cliente, cliente_verificado: true })
+        .update({
+          cliente,
+          cliente_verificado: true,
+          raw_payload: { source: "tiktok_shop_api", order_type: order.order_type, status: order.status },
+        })
         .eq("id", orderRowId)
         .select("*")
         .single();
