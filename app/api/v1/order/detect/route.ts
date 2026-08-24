@@ -183,10 +183,23 @@ export async function POST(req: NextRequest) {
     // válido y distinto del guardado, se corrige — pero nunca se sobreescribe
     // un dato bueno con uno vacío/cero, para no perder información por un
     // escaneo posterior parcial.
+    //
+    // El cliente NUNCA se toca aquí si el pedido ya viene de la API oficial
+    // de TikTok Shop (raw_payload.source === "tiktok_shop_api") — visto en
+    // producción: el escaneo de la extensión en la página de Seller a veces
+    // captura mal esa columna (p. ej. "Subasta LIVE miércoles 12:00:38" en
+    // vez del nombre real) y, sin esta comprobación, ese texto basura
+    // sobreescribía el nombre bueno que ya teníamos, partiendo al mismo
+    // cliente real en varias fichas distintas en Caja TikTok. La API
+    // oficial es la fuente de verdad para estos pedidos; el escaneo de la
+    // extensión solo debe completar el cliente cuando no venga ya de ahí.
+    const rawSource = (order.raw_payload as { source?: string } | null)?.source;
+    const clienteEsDeApiOficial = rawSource === "tiktok_shop_api";
+
     const updates: Record<string, unknown> = {};
     const newPrecioCents = Math.round(body.precio * 100);
     if (newPrecioCents > 0 && newPrecioCents !== order.precio_cents) updates.precio_cents = newPrecioCents;
-    if (body.cliente && body.cliente !== order.cliente) updates.cliente = body.cliente;
+    if (!clienteEsDeApiOficial && body.cliente && body.cliente !== order.cliente) updates.cliente = body.cliente;
     if (fechaPedido && fechaPedido !== order.fecha_pedido) updates.fecha_pedido = fechaPedido;
 
     if (Object.keys(updates).length > 0) {

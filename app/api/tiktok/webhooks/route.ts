@@ -107,11 +107,20 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * Si el pedido ya existía pero se quedó con CLIENTE_DESCONOCIDO (ver más
- * abajo, no se cobra/imprime hasta tener el nombre), este aviso posterior
- * es la oportunidad de completarlo. Si ya hay nombre disponible Y el pedido
- * todavía no se había cobrado, se cobra/imprime aquí mismo — es la primera
- * vez que de verdad tiene todos los datos.
+ * Segunda (y última) comprobación del nombre del cliente, en el primer
+ * aviso posterior al de creación del pedido. Cubre dos casos distintos
+ * vistos en producción:
+ *  - El pedido se quedó con CLIENTE_DESCONOCIDO (dirección aún vacía) — se
+ *    cobra/imprime aquí mismo en cuanto haya nombre, es la primera vez que
+ *    de verdad tiene todos los datos.
+ *  - El pedido YA tenía un nombre no vacío, pero TikTok lo sustituyó por
+ *    otro poco después (p. ej. un nombre provisional "usuario NombreRaro"
+ *    que luego cambia al nombre real de envío) — sin esto, el mismo cliente
+ *    real podía acabar con dos textos de "cliente" distintos entre pedidos,
+ *    partiéndose en fichas distintas en Caja TikTok.
+ * Se marca cliente_verificado=true en cuanto se obtiene un nombre real (no
+ * el placeholder), para no repetir esta llamada a la API en cada aviso
+ * posterior de la vida del pedido — solo hace falta una vez.
  */
 async function refreshClienteAndMaybePrint(tenantId: string, orderRowId: string, tiktokOrderId: string): Promise<void> {
   try {
@@ -121,11 +130,14 @@ async function refreshClienteAndMaybePrint(tenantId: string, orderRowId: string,
       const [order] = await getOrderDetails(toApiCredentials(connection), shop.shop_cipher, [tiktokOrderId]);
       if (!order) continue;
       const cliente = clienteFromOrder(order);
+      // Sin nombre todavía — no se marca como verificado, para poder
+      // reintentarlo en el siguiente aviso (o lo resuelve la red de
+      // seguridad de force-print-stale-orders pasados 10 min).
       if (cliente === CLIENTE_DESCONOCIDO) return;
 
       const { data: fullOrder } = await supabaseAdmin
         .from("orders")
-        .update({ cliente })
+        .update({ cliente, cliente_verificado: true })
         .eq("id", orderRowId)
         .select("*")
         .single();
@@ -152,19 +164,18 @@ async function processOrderStatusChange(tenantId: string, payload: TikTokOrderSt
   // de un directo en marcha, los cambios de estado posteriores no afectan).
   const { data: existing } = await supabaseAdmin
     .from("orders")
-    .select("id, cliente")
+    .select("id, cliente, cliente_verificado")
     .eq("tenant_id", tenantId)
     .eq("external_order_id", orderId)
     .maybeSingle();
   if (existing) {
-    // TikTok puede no tener todavía la dirección de envío rellena en el
-    // instante del primer aviso (visto en producción: recipient_address
-    // vacío nada más crearse el pedido, completo unos minutos después) — se
-    // guardó como CLIENTE_DESCONOCIDO y, a diferencia del resto de este
-    // pedido, nada más lo vuelve a tocar. Se aprovecha este aviso posterior
-    // (normalmente el cambio a pagado/enviado, segundos o minutos después)
-    // para completarlo, sin cobrar ni imprimir de nuevo.
-    if (existing.cliente === CLIENTE_DESCONOCIDO) await refreshClienteAndMaybePrint(tenantId, existing.id, orderId);
+    // Se aprovecha este aviso posterior (normalmente el cambio a
+    // pagado/enviado, segundos o minutos después de crearse el pedido) para
+    // volver a comprobar el nombre UNA vez más — cubre tanto el caso de
+    // CLIENTE_DESCONOCIDO (dirección aún vacía) como el de un nombre
+    // provisional que TikTok cambia poco después (ver
+    // refreshClienteAndMaybePrint) — sin cobrar ni imprimir de nuevo.
+    if (!existing.cliente_verificado) await refreshClienteAndMaybePrint(tenantId, existing.id, orderId);
     return;
   }
 
