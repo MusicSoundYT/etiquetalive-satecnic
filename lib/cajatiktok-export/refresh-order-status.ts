@@ -86,7 +86,12 @@ async function refreshOneClient(pair: CajaTikTokPair): Promise<{ checked: number
 
   const estadoByOrderId: Record<string, string> = {};
   for (const shop of shops) {
-    const orderIds = rows.map((r) => r.pedido_tiktok);
+    // Un mismo pedido puede aparecer varias veces en `rows` (imports de Caja
+    // TikTok que se solapan en fechas) — sin deduplicar, un lote podía llevar
+    // el mismo order_id repetido, y TikTok rechaza la llamada entera con
+    // "exist wrong order_id" (visto en producción, el mismo lote fallando en
+    // cada ejecución del cron sin avanzar nunca).
+    const orderIds = [...new Set(rows.map((r) => r.pedido_tiktok))];
     for (let i = 0; i < orderIds.length; i += ORDER_DETAILS_CHUNK_SIZE) {
       const chunk = orderIds.slice(i, i + ORDER_DETAILS_CHUNK_SIZE);
       try {
