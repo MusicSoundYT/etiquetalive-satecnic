@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 2000;
 
 function printLabelHtml(html: string) {
   const iframe = document.createElement("iframe");
