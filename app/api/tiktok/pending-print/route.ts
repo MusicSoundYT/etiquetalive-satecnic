@@ -12,8 +12,13 @@ const WINNER_SIGHTING_WINDOW_MS = 10 * 60 * 1000;
 // Si un pedido lleva más de esto esperando sin que ninguna estación lo
 // reclame (p. ej. porque el nombre no coincidió bien, o nadie tiene la
 // extensión activa en ese directo), se entrega igual a quien pregunte —
-// nunca se debe perder una etiqueta por un fallo de emparejamiento.
-const UNMATCHED_GRACE_MS = 3 * 60 * 1000;
+// nunca se debe perder una etiqueta por un fallo de emparejamiento. Se
+// mantiene corto (no 0) a propósito: da un margen breve para que la
+// estación correcta detecte al ganador antes de que CUALQUIER estación de
+// ese mismo tenant pueda llevárselo — bajarlo a 0 abriría la puerta a que,
+// con dos directos simultáneos de verdad, la que pregunte primero se lleve
+// pedidos que no son suyos.
+const UNMATCHED_GRACE_MS = 15 * 1000;
 // Se piden más candidatos de los que se van a devolver porque, con filtro de
 // estación activo, algunos se descartan sin reclamar (no del todo, no toca
 // aún el margen de gracia) — hay que tener margen para completar MAX_PER_POLL.
