@@ -88,6 +88,52 @@ async function fetchProductNames(tenantId: string, orderIds: string[]): Promise<
   return byId;
 }
 
+type HistoricalScan = { fecha_escaneo: string | null };
+
+/**
+ * Busca si alguno de estos pedidos ya se escaneó en OTRA importación (de
+ * cualquier origen: la web de Caja TikTok, la automática diaria, u otra
+ * importación por rango), para no obligar a re-escanear algo ya hecho.
+ * Mismo criterio que findHistoricalScannedStatus() en excel.js del repo de
+ * Caja TikTok: cualquier importación no borrada (estado != "eliminado"), se
+ * queda con el escaneo más reciente si hay más de uno.
+ */
+async function fetchHistoricalScannedStatus(
+  caja: ReturnType<typeof getCajaTikTokClient>,
+  grupoId: string,
+  orderIds: string[]
+): Promise<Record<string, HistoricalScan>> {
+  const byOrderId: Record<string, HistoricalScan> = {};
+  if (!orderIds.length) return byOrderId;
+
+  const { data: trashed, error: trashErr } = await caja
+    .from("importaciones")
+    .select("id")
+    .eq("grupo_id", grupoId)
+    .eq("estado", "eliminado");
+  if (trashErr) throw new Error(`No se pudieron leer las importaciones en papelera: ${trashErr.message}`);
+  const trashedIds = new Set((trashed ?? []).map((r) => r.id as string));
+
+  for (let i = 0; i < orderIds.length; i += ORDER_DETAILS_CHUNK_SIZE) {
+    const chunk = orderIds.slice(i, i + ORDER_DETAILS_CHUNK_SIZE);
+    const { data, error } = await caja
+      .from("pedidos")
+      .select("pedido_tiktok,fecha_escaneo,importacion_id")
+      .eq("grupo_id", grupoId)
+      .in("pedido_tiktok", chunk)
+      .eq("escaneado", true);
+    if (error) throw new Error(`No se pudo consultar el historial de pedidos escaneados: ${error.message}`);
+    for (const row of data ?? []) {
+      if (trashedIds.has(row.importacion_id as string)) continue;
+      const prev = byOrderId[row.pedido_tiktok as string];
+      if (!prev || new Date((row.fecha_escaneo as string) || 0) > new Date(prev.fecha_escaneo || 0)) {
+        byOrderId[row.pedido_tiktok as string] = { fecha_escaneo: row.fecha_escaneo as string | null };
+      }
+    }
+  }
+  return byOrderId;
+}
+
 function defaultRangeNombreArchivo(startUtc: string, endUtc: string): string {
   const fmt = (iso: string) =>
     new Intl.DateTimeFormat("es-ES", { timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit", hour12: false })
@@ -255,22 +301,35 @@ export async function exportAuctionOrdersForRange(
   });
   await upsertInChunks(caja, "asignaciones_caja", asignacionesPayload, "importacion_id,cliente_id");
 
-  const pedidosPayload = orders.map((o) => ({
-    importacion_id: importId,
-    cliente_id: clienteIdByKey[buyerKey(o.cliente)],
-    grupo_id: grupoId,
-    pedido_tiktok: o.external_order_id,
-    importe: o.precio_cents / 100,
-    importe_texto: (o.precio_cents / 100).toFixed(2),
-    caja_asignada: existingByKey[buyerKey(o.cliente)]?.caja_reservada ?? null,
-    escaneado: false,
-    fecha_escaneo: null,
-    estado: "pendiente",
-    estado_envio: ESTADO_ENVIO_DEFAULT,
-    fecha_pedido: formatFechaPedido(o.fecha_pedido),
-    marcado: false,
-    producto: productNameById[o.external_order_id] || null,
-  }));
+  // Un mismo pedido puede ya estar escaneado en OTRA importación (la
+  // automática de este mismo día, o una anterior) antes de que se cree esta
+  // — visto en producción: cada "Importar sesión de TikTok" por rango
+  // creaba el pedido con escaneado=false sin comprobar nada, obligando al
+  // almacén a volver a escanear algo que ya tenían hecho. Mismo mecanismo
+  // que findHistoricalScannedStatus() en el repo de Caja TikTok (excel.js),
+  // para que dé igual por qué camino se cree la importación.
+  const orderIds = orders.map((o) => o.external_order_id);
+  const historicalByOrderId = await fetchHistoricalScannedStatus(caja, grupoId, orderIds);
+
+  const pedidosPayload = orders.map((o) => {
+    const hist = historicalByOrderId[o.external_order_id];
+    return {
+      importacion_id: importId,
+      cliente_id: clienteIdByKey[buyerKey(o.cliente)],
+      grupo_id: grupoId,
+      pedido_tiktok: o.external_order_id,
+      importe: o.precio_cents / 100,
+      importe_texto: (o.precio_cents / 100).toFixed(2),
+      caja_asignada: existingByKey[buyerKey(o.cliente)]?.caja_reservada ?? null,
+      escaneado: !!hist,
+      fecha_escaneo: hist?.fecha_escaneo ?? null,
+      estado: hist ? "escaneado" : "pendiente",
+      estado_envio: ESTADO_ENVIO_DEFAULT,
+      fecha_pedido: formatFechaPedido(o.fecha_pedido),
+      marcado: false,
+      producto: productNameById[o.external_order_id] || null,
+    };
+  });
   await upsertInChunks(caja, "pedidos", pedidosPayload, "importacion_id,pedido_tiktok");
 
   return { skipped: false, totalOrders: orders.length, totalClients: buyerKeys.length, importId };
