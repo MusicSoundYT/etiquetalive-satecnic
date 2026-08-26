@@ -31,7 +31,7 @@ export function AdminUsersTable({
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", lastName: "", email: "", isAdmin: false });
+  const [editForm, setEditForm] = useState({ name: "", lastName: "", email: "", isAdmin: false, newPassword: "" });
   const [editError, setEditError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [balanceAmount, setBalanceAmount] = useState("");
@@ -156,7 +156,7 @@ export function AdminUsersTable({
   function startEdit(u: AdminUser) {
     setEditingId(u.id);
     setEditError(null);
-    setEditForm({ name: u.name ?? "", lastName: u.last_name ?? "", email: u.email, isAdmin: u.is_admin });
+    setEditForm({ name: u.name ?? "", lastName: u.last_name ?? "", email: u.email, isAdmin: u.is_admin, newPassword: "" });
     setBalanceAmount("");
     setBalanceReason("");
     setBalanceError(null);
@@ -233,6 +233,8 @@ export function AdminUsersTable({
           lastName: editForm.lastName || undefined,
           email: editForm.email,
           isAdmin: editForm.isAdmin,
+          // Vacío = no tocar la contraseña actual.
+          newPassword: editForm.newPassword.trim() || undefined,
         }),
       });
       const data = await res.json().catch(() => null);
@@ -479,6 +481,19 @@ export function AdminUsersTable({
                           className={smallInputClass}
                         />
                       </div>
+                      <div>
+                        <label className="mb-1 block text-xs text-zinc-500 dark:text-zinc-400">
+                          Nueva contraseña
+                        </label>
+                        <input
+                          type="password"
+                          autoComplete="new-password"
+                          value={editForm.newPassword}
+                          onChange={(e) => setEditForm({ ...editForm, newPassword: e.target.value })}
+                          placeholder="Dejar en blanco para no cambiarla"
+                          className={`${smallInputClass} w-56`}
+                        />
+                      </div>
                       <label className="flex items-center gap-1.5 pb-1.5 text-xs text-zinc-600 dark:text-zinc-400">
                         <input
                           type="checkbox"
@@ -502,6 +517,9 @@ export function AdminUsersTable({
                       </button>
                       {editError && <span className="text-xs text-red-600 dark:text-red-400">{editError}</span>}
                     </div>
+                    <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+                      La contraseña debe tener al menos 6 caracteres, con mayúscula, minúscula y un carácter especial.
+                    </p>
 
                     <div className="mt-3 flex flex-wrap items-end gap-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
                       <div>
