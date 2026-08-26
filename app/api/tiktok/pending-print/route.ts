@@ -38,11 +38,40 @@ function cleanWinnerName(raw: string): string {
   return String(raw || "").split(":")[0].trim();
 }
 
+function stripAccents(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+/**
+ * TikTok a veces devuelve recipient_address.name ya enmascarado (p. ej.
+ * "M***se S***s S***hez") incluso para pedidos recién creados, mientras que
+ * la extensión ve el nombre completo sin enmascarar en la propia página del
+ * directo — visto en producción durante una subasta en directo. El
+ * enmascarado de TikTok conserva la primera letra y la longitud EXACTA de
+ * cada palabra, así que se puede comparar por iniciales+longitud en vez de
+ * por texto: namesMatch() por sí sola nunca puede acertar aquí, los
+ * asteriscos rompen la comparación normal.
+ */
+function maskedNameMatches(cliente: string, winner: string): boolean {
+  if (!cliente.includes("*")) return false;
+  const maskedWords = stripAccents(cliente.toLowerCase()).split(/\s+/).filter(Boolean);
+  const winnerWords = stripAccents(cleanWinnerName(winner).toLowerCase())
+    .replace(/[^a-z0-9* ]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!maskedWords.length || !winnerWords.length) return false;
+  return maskedWords.every((mw) =>
+    mw.includes("*")
+      ? winnerWords.some((ww) => ww[0] === mw[0] && ww.length === mw.length)
+      : winnerWords.some((ww) => ww === mw)
+  );
+}
+
 function namesMatch(cliente: string, winner: string): boolean {
   const a = normalizeName(cliente);
   const b = normalizeName(cleanWinnerName(winner));
-  if (!a || !b) return false;
-  return a.includes(b) || b.includes(a);
+  if (a && b && (a.includes(b) || b.includes(a))) return true;
+  return maskedNameMatches(cliente, winner);
 }
 
 /**
