@@ -276,6 +276,15 @@ export async function exportAuctionOrdersForRange(
   });
   if (importErr) throw new Error(`No se pudo crear la importación en Caja TikTok: ${importErr.message}`);
 
+  // Dos clientes distintos no pueden compartir número de caja dentro de la
+  // misma importación (restricción añadida en Caja TikTok tras verlo en
+  // producción: la caja reservada de un cliente coincidía por error con la
+  // que ya usaba otro cliente nuevo del mismo import, lo que además rompería
+  // ahora todo el lote al chocar con esa restricción). Se lleva la cuenta de
+  // qué números de caja reservada ya se han usado en ESTE mismo lote — el
+  // primero que llega se la queda, al resto se les trata como cliente nuevo
+  // (caja en blanco, se le asignará una libre al escanear su primer producto).
+  const cajasReservadasUsadas = new Set<number>();
   const asignacionesPayload = buyerKeys.map((key) => {
     const existing = existingByKey[key];
     const habitual = (existing?.total_importaciones ?? 0) > 0;
@@ -283,7 +292,11 @@ export async function exportAuctionOrdersForRange(
     // de un día anterior), se le asigna directamente aquí — el gerente pidió
     // que la caja "no se finalice hasta cerrar el último pedido del
     // cliente", así que debe seguir siendo la misma aunque pasen varios días.
-    const cajaReservada = existing?.caja_reservada ?? null;
+    let cajaReservada = existing?.caja_reservada ?? null;
+    if (cajaReservada != null) {
+      if (cajasReservadasUsadas.has(cajaReservada)) cajaReservada = null;
+      else cajasReservadasUsadas.add(cajaReservada);
+    }
     return {
       importacion_id: importId,
       cliente_id: clienteIdByKey[key],
