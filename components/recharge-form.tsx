@@ -79,7 +79,7 @@ export function RechargeForm() {
         ))}
       </div>
 
-      <form onSubmit={handleCustomSubmit} className="mt-3 flex items-end gap-2">
+      <form onSubmit={handleCustomSubmit} className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
         <div className="flex-1">
           <label htmlFor="custom-amount" className="mb-1 block text-xs text-zinc-500 dark:text-zinc-400">
             Otro importe (€)
@@ -95,7 +95,11 @@ export function RechargeForm() {
             className="w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-zinc-100 dark:focus:ring-zinc-100"
           />
         </div>
-        <button type="submit" disabled={anyLoading || !customAmount} className={`${buttonClass} w-auto px-4`}>
+        <button
+          type="submit"
+          disabled={anyLoading || !customAmount}
+          className={`${buttonClass} sm:w-auto sm:px-6`}
+        >
           {customLoading ? "Redirigiendo..." : "Recargar"}
         </button>
       </form>
