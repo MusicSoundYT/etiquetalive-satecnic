@@ -4,12 +4,20 @@ import { getSessionUser } from "@/lib/auth/session";
 import { getStripeClient } from "@/lib/stripe/client";
 import { env } from "@/lib/env";
 
-const ALLOWED_AMOUNTS_CENTS = [500, 1000, 2000, 5000];
+// Antes solo se permitían los 4 importes fijos del formulario (5/10/20/50€).
+// RechargeForm añadió un campo para escribir un importe a mano, así que aquí
+// se cambia a un rango — 1€ de mínimo (Stripe ya exige 0,50€ para EUR, se
+// deja algo de margen) y 2000€ de máximo, para frenar un error de escritura
+// (p. ej. un cero de más) sin limitar un uso legítimo real.
+const MIN_AMOUNT_CENTS = 100;
+const MAX_AMOUNT_CENTS = 200000;
 
 const bodySchema = z.object({
-  amountCents: z.number().int().refine((v) => ALLOWED_AMOUNTS_CENTS.includes(v), {
-    message: "Importe de recarga no permitido.",
-  }),
+  amountCents: z
+    .number()
+    .int()
+    .min(MIN_AMOUNT_CENTS, "Importe mínimo: 1€.")
+    .max(MAX_AMOUNT_CENTS, "Importe máximo: 2000€."),
 });
 
 export async function POST(req: NextRequest) {
