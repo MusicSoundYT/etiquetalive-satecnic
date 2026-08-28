@@ -48,13 +48,9 @@ export function AccountMenu({
             <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-50">{name}</p>
             <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{email}</p>
           </div>
-          <Link
-            href="/dashboard"
-            className="block px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            onClick={() => setOpen(false)}
-          >
-            Pedidos
-          </Link>
+          {/* "Pedidos" (/dashboard) oculto a petición del cliente — todo el
+              flujo real va por Pedidos (API) ahora. La página sigue
+              accesible por URL directa, solo se quita del menú. */}
           <Link
             href="/pedidos-api"
             className="block px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800"

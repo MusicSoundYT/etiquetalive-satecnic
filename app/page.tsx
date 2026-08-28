@@ -3,5 +3,5 @@ import { getSessionUser } from "@/lib/auth/session";
 
 export default async function Home() {
   const user = await getSessionUser();
-  redirect(user ? "/dashboard" : "/login");
+  redirect(user ? "/pedidos-api" : "/login");
 }

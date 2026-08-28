@@ -817,28 +817,9 @@
     obs.observe(document.documentElement || document.body, { childList: true, subtree: true, characterData: true });
   };
 
-  // Si este ordenador tiene una "estación" configurada (dos directos
-  // simultáneos colgando de la misma tienda de TikTok), esta pestaña de
-  // Seller no debe detectar ni auto-imprimir nada por su cuenta — toda la
-  // impresión de ese ordenador tiene que salir SOLO del webhook oficial de
-  // TikTok + el emparejamiento por nombre en "Pedidos (API)", para no tener
-  // dos vías compitiendo entre sí durante la prueba. Sin estación
-  // configurada, funciona exactamente igual que siempre.
-  function startUnlessStationConfigured() {
-    try {
-      chrome.storage.local.get(["el_station_id"], (r) => {
-        if ((r.el_station_id || "").trim()) {
-          console.log("[EtiquetaLive] order-watcher desactivado: hay una estación configurada, se usa solo el webhook + Pedidos (API).");
-          return;
-        }
-        start();
-      });
-    } catch (_) { start(); }
-  }
-
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", startUnlessStationConfigured, { once: true });
+    document.addEventListener("DOMContentLoaded", start, { once: true });
   } else {
-    startUnlessStationConfigured();
+    start();
   }
 })();

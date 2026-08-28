@@ -10,7 +10,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-zinc-950">
       <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-        <Link href="/dashboard" className="flex items-center">
+        <Link href="/pedidos-api" className="flex items-center">
           <Image src="/logo-woowtienda.png" alt="Woow Insólito" width={38} height={41} priority />
         </Link>
         <nav className="flex items-center gap-4">

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 
 const POLL_INTERVAL_MS = 2000;
+const BROADCAST_STORAGE_KEY = "el_print_broadcast_enabled";
+const DEVICE_ID_STORAGE_KEY = "el_print_device_id";
 
 function printLabelHtml(html: string) {
   const iframe = document.createElement("iframe");
@@ -30,6 +32,24 @@ function printLabelHtml(html: string) {
   }
 }
 
+/** Un identificador aleatorio propio de este navegador — no identifica al
+ * usuario, solo distingue "este ordenador" de cualquier otro que tenga la
+ * misma cuenta abierta, para que el servidor pueda entregarle su propia
+ * copia de cada etiqueta cuando el reparto duplicado está activado. Se
+ * genera una vez y se guarda en localStorage: sobrevive a recargas, pero es
+ * distinto en cada ordenador/navegador. */
+function getOrCreateDeviceId(): string {
+  try {
+    const existing = localStorage.getItem(DEVICE_ID_STORAGE_KEY);
+    if (existing) return existing;
+    const fresh = crypto.randomUUID();
+    localStorage.setItem(DEVICE_ID_STORAGE_KEY, fresh);
+    return fresh;
+  } catch {
+    return crypto.randomUUID();
+  }
+}
+
 /**
  * Mientras esta pestaña esté abierta, pregunta cada pocos segundos al
  * servidor si hay etiquetas ya cobradas (por el aviso automático de TikTok,
@@ -42,17 +62,38 @@ function printLabelHtml(html: string) {
  * la misma cuenta de EtiquetaLive imprimía TODOS los pedidos, de cualquier
  * tienda.
  *
- * stationId (opcional): cuando hay DOS directos simultáneos colgando de la
- * MISMA tienda (mismo shop_id — no distinguible por shopId), el servidor
- * usa este valor para solo entregar a este ordenador los pedidos cuyo
- * cliente coincida con un ganador visto por la extensión en esa misma
- * estación. Sin esto, se comporta exactamente igual que siempre.
+ * "Imprimir también en otros ordenadores" (opcional, por ordenador): cuando
+ * dos puestos de trabajo tienen esta misma pantalla abierta para la misma
+ * tienda (p. ej. dos mesas de empaquetado de un mismo directo), por defecto
+ * cada etiqueta solo sale en el ordenador que gane la carrera por
+ * preguntarle antes al servidor — el otro se queda sin ella. Activando esto
+ * en cada ordenador que deba recibir su propia copia, todos imprimen todas
+ * las etiquetas de esa misma tienda (nunca de otra tienda ni de otro
+ * directo del mismo tenant — sigue respetando shopId).
  */
-export function TikTokPrintWatcher({ shopId, stationId }: { shopId?: string | null; stationId?: string | null }) {
+export function TikTokPrintWatcher({ shopId }: { shopId?: string | null }) {
   const [active, setActive] = useState(true);
   const [printedCount, setPrintedCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [broadcast, setBroadcast] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    try {
+      setBroadcast(localStorage.getItem(BROADCAST_STORAGE_KEY) === "1");
+    } catch {
+      // localStorage no disponible (navegación privada estricta, etc.) — se queda en false.
+    }
+  }, []);
+
+  function handleBroadcastToggle(next: boolean) {
+    setBroadcast(next);
+    try {
+      localStorage.setItem(BROADCAST_STORAGE_KEY, next ? "1" : "0");
+    } catch {
+      // Sin localStorage esto no persiste entre recargas, pero la sesión actual sigue funcionando.
+    }
+  }
 
   useEffect(() => {
     if (!active) {
@@ -64,7 +105,7 @@ export function TikTokPrintWatcher({ shopId, stationId }: { shopId?: string | nu
       try {
         const params = new URLSearchParams();
         if (shopId) params.set("shop_id", shopId);
-        if (stationId) params.set("station_id", stationId);
+        if (broadcast) params.set("device_id", getOrCreateDeviceId());
         const query = params.toString() ? `?${params.toString()}` : "";
         const res = await fetch(`/api/tiktok/pending-print${query}`);
         if (!res.ok) return;
@@ -82,7 +123,7 @@ export function TikTokPrintWatcher({ shopId, stationId }: { shopId?: string | nu
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [active, shopId, stationId]);
+  }, [active, shopId, broadcast]);
 
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -98,6 +139,10 @@ export function TikTokPrintWatcher({ shopId, stationId }: { shopId?: string | nu
       >
         {active ? "Pausar" : "Reanudar"}
       </button>
+      <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400" title="Actívalo en cada ordenador que deba recibir su propia copia de cada etiqueta de esta tienda.">
+        <input type="checkbox" checked={broadcast} onChange={(e) => handleBroadcastToggle(e.target.checked)} />
+        Imprimir también en otros ordenadores
+      </label>
       {printedCount > 0 && (
         <span className="text-xs text-zinc-400 dark:text-zinc-500">{printedCount} impresas esta sesión</span>
       )}

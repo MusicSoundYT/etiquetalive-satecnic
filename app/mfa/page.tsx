@@ -127,7 +127,7 @@ export default function MfaPage() {
         setError(data.error ?? "Código incorrecto.");
         return;
       }
-      router.push("/dashboard");
+      router.push("/pedidos-api");
     } finally {
       setLoading(false);
     }
