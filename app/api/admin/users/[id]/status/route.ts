@@ -9,8 +9,11 @@ const bodySchema = z.object({ active: z.boolean() });
  * "Dar de baja" / reactivar un cliente. Actúa sobre el tenant entero (no solo
  * el usuario) porque una cuenta puede tener varios usuarios y lo que se
  * bloquea es el acceso al Servicio, no un login individual. Al desactivar,
- * además se revocan todas las sesiones activas de ese tenant para que el
- * bloqueo sea inmediato, no solo en el próximo login.
+ * además se revocan todas las sesiones activas de ese tenant y todas sus
+ * API keys (extensión de Chrome) para que el bloqueo sea inmediato y
+ * completo — visto en producción: un tenant dado de baja hace más de un mes
+ * seguía con su extensión activa mandando pedidos reales de sus clientes,
+ * porque solo se revocaban las sesiones web, nunca las API keys.
  */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -47,6 +50,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         .in("user_id", tenantUserIds)
         .is("revoked_at", null);
     }
+
+    await supabaseAdmin
+      .from("api_keys")
+      .update({ status: "revoked", revoked_at: new Date().toISOString() })
+      .eq("tenant_id", targetUser.tenant_id)
+      .eq("status", "active");
   }
 
   await supabaseAdmin.from("admin_audit_log").insert({
