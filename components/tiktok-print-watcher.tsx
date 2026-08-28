@@ -51,6 +51,40 @@ function getOrCreateDeviceId(): string {
 }
 
 /**
+ * El sondeo real corre dentro de un Web Worker, no con un setInterval normal
+ * de la pestaña. Motivo, visto en producción: Chrome frena mucho los
+ * temporizadores del hilo principal cuando la pestaña lleva un rato en
+ * segundo plano (minimizada, u otra ventana/pestaña delante) — pasados unos
+ * minutos así, un sondeo pensado para cada 2 segundos pasa a comprobar solo
+ * una vez por minuto (un ordenador de Woow se quedó así en pleno directo y
+ * casi no le llegaban etiquetas). Un Web Worker no sufre ese mismo frenado,
+ * así que sigue preguntando al servidor a su ritmo aunque nadie esté mirando
+ * esa pestaña. Solo la impresión en sí (que necesita el documento/DOM) se
+ * hace de vuelta en el hilo principal, al recibir el mensaje del worker.
+ */
+function createPollWorker(): Worker {
+  const workerCode = `
+    self.onmessage = (e) => {
+      const { url, intervalMs } = e.data;
+      async function poll() {
+        try {
+          const res = await fetch(url);
+          if (!res.ok) return;
+          const data = await res.json();
+          self.postMessage({ type: "orders", orders: data.orders || [] });
+        } catch (err) {
+          self.postMessage({ type: "error", message: String(err) });
+        }
+      }
+      poll();
+      setInterval(poll, intervalMs);
+    };
+  `;
+  const blob = new Blob([workerCode], { type: "application/javascript" });
+  return new Worker(URL.createObjectURL(blob));
+}
+
+/**
  * Mientras esta pestaña esté abierta, pregunta cada pocos segundos al
  * servidor si hay etiquetas ya cobradas (por el aviso automático de TikTok,
  * o por la extensión si falló al imprimir) esperando a que alguien las
@@ -62,27 +96,31 @@ function getOrCreateDeviceId(): string {
  * la misma cuenta de EtiquetaLive imprimía TODOS los pedidos, de cualquier
  * tienda.
  *
- * "Imprimir también en otros ordenadores" (opcional, por ordenador): cuando
- * dos puestos de trabajo tienen esta misma pantalla abierta para la misma
- * tienda (p. ej. dos mesas de empaquetado de un mismo directo), por defecto
- * cada etiqueta solo sale en el ordenador que gane la carrera por
- * preguntarle antes al servidor — el otro se queda sin ella. Activando esto
- * en cada ordenador que deba recibir su propia copia, todos imprimen todas
- * las etiquetas de esa misma tienda (nunca de otra tienda ni de otro
- * directo del mismo tenant — sigue respetando shopId).
+ * "Imprimir también en otros ordenadores" (por ordenador, activado por
+ * defecto): sin esto, cuando dos puestos de trabajo tienen esta misma
+ * pantalla abierta para la misma tienda (p. ej. dos mesas de empaquetado de
+ * un mismo directo), cada etiqueta solo sale en el ordenador que gane la
+ * carrera por preguntarle antes al servidor — el otro se queda sin ella. Va
+ * activado desde el principio en cada ordenador nuevo (no hace falta
+ * acordarse de marcarlo a mano); cada uno puede desactivarlo si de verdad
+ * quiere volver al reparto exclusivo de antes. Sigue respetando shopId —
+ * nunca imprime etiquetas de otra tienda o directo del mismo tenant.
  */
 export function TikTokPrintWatcher({ shopId }: { shopId?: string | null }) {
   const [active, setActive] = useState(true);
   const [printedCount, setPrintedCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [broadcast, setBroadcast] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [broadcast, setBroadcast] = useState(true);
+  const workerRef = useRef<Worker | null>(null);
 
   useEffect(() => {
     try {
-      setBroadcast(localStorage.getItem(BROADCAST_STORAGE_KEY) === "1");
+      const stored = localStorage.getItem(BROADCAST_STORAGE_KEY);
+      // Sin preferencia guardada todavía (ordenador nuevo): activado por
+      // defecto. Si alguien lo desactivó antes en este navegador, se respeta.
+      setBroadcast(stored === null ? true : stored === "1");
     } catch {
-      // localStorage no disponible (navegación privada estricta, etc.) — se queda en false.
+      // Sin localStorage disponible, se queda en el valor por defecto (true).
     }
   }, []);
 
@@ -97,31 +135,34 @@ export function TikTokPrintWatcher({ shopId }: { shopId?: string | null }) {
 
   useEffect(() => {
     if (!active) {
-      if (timerRef.current) clearInterval(timerRef.current);
+      workerRef.current?.terminate();
+      workerRef.current = null;
       return;
     }
 
-    async function poll() {
-      try {
-        const params = new URLSearchParams();
-        if (shopId) params.set("shop_id", shopId);
-        if (broadcast) params.set("device_id", getOrCreateDeviceId());
-        const query = params.toString() ? `?${params.toString()}` : "";
-        const res = await fetch(`/api/tiktok/pending-print${query}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        const orders: { label_html: string }[] = data.orders ?? [];
+    const params = new URLSearchParams();
+    if (shopId) params.set("shop_id", shopId);
+    if (broadcast) params.set("device_id", getOrCreateDeviceId());
+    const query = params.toString() ? `?${params.toString()}` : "";
+    const url = `${window.location.origin}/api/tiktok/pending-print${query}`;
+
+    const worker = createPollWorker();
+    worker.onmessage = (e: MessageEvent) => {
+      const msg = e.data as { type: string; orders?: { label_html: string }[] };
+      if (msg.type === "orders") {
+        const orders = msg.orders ?? [];
         for (const order of orders) printLabelHtml(order.label_html);
         if (orders.length) setPrintedCount((c) => c + orders.length);
-      } catch {
+      } else if (msg.type === "error") {
         setError("No se pudo consultar si hay etiquetas pendientes.");
       }
-    }
+    };
+    worker.postMessage({ url, intervalMs: POLL_INTERVAL_MS });
+    workerRef.current = worker;
 
-    poll();
-    timerRef.current = setInterval(poll, POLL_INTERVAL_MS);
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      worker.terminate();
+      workerRef.current = null;
     };
   }, [active, shopId, broadcast]);
 
@@ -139,7 +180,7 @@ export function TikTokPrintWatcher({ shopId }: { shopId?: string | null }) {
       >
         {active ? "Pausar" : "Reanudar"}
       </button>
-      <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400" title="Actívalo en cada ordenador que deba recibir su propia copia de cada etiqueta de esta tienda.">
+      <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400" title="Activado por defecto: cada ordenador que tenga esta pantalla abierta recibe su propia copia de cada etiqueta de esta tienda.">
         <input type="checkbox" checked={broadcast} onChange={(e) => handleBroadcastToggle(e.target.checked)} />
         Imprimir también en otros ordenadores
       </label>
