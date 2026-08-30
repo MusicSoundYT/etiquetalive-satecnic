@@ -17,6 +17,13 @@ const eventSchema = z.object({
   pageUrl: z.string().trim().max(2000).optional(),
   source: z.string().trim().max(80).optional(),
   detectedAt: z.string().optional(),
+  // Identidad de "este ordenador", compartida automáticamente con Pedidos
+  // (API) vía device-bridge.js — permite, en pending-print, saber qué
+  // estación ganó una subasta a un precio concreto sin que nadie configure
+  // nada a mano (ver comentario en pending-print/route.ts). Se guarda en la
+  // misma columna que antes era "station_id" (la vieja estación manual, ya
+  // retirada) para no necesitar una migración nueva.
+  deviceId: z.string().trim().max(80).optional(),
 });
 
 const bodySchema = z.object({
@@ -65,6 +72,7 @@ export async function POST(req: NextRequest) {
     page_url: event.pageUrl ?? null,
     capture_source: event.source ?? null,
     html_fragment_size: event.raw?.length ?? null,
+    station_id: event.deviceId || null,
   });
 
   return withCors(req, NextResponse.json({ status: "ok" }));

@@ -11,6 +11,53 @@ const MAX_PER_POLL = 5;
 // cobrados desde siempre. Con esto, solo entra en juego lo detectado en las
 // últimas horas.
 const DEVICE_BROADCAST_WINDOW_MS = 4 * 60 * 60 * 1000;
+// Margen a cada lado de fecha_detectado del pedido en el que se buscan
+// ganadores de subasta con el mismo precio — el pedido tarda algo en
+// crearse tras terminar la ronda (visto en producción: normalmente
+// segundos, alguna vez algo más), y el reloj de cada ordenador puede ir
+// ligeramente desajustado.
+const PRICE_MATCH_WINDOW_MS = 2 * 60 * 1000;
+// Los importes vienen de convertir texto a número en dos sitios distintos
+// (la extensión y la API) — un céntimo de margen absorbe redondeos sin
+// abrir la puerta a precios de verdad distintos.
+const PRICE_MATCH_TOLERANCE_CENTS = 1;
+
+/**
+ * Si, en la ventana de tiempo alrededor de este pedido, UNA SOLA estación
+ * ganó una subasta al mismo precio (payment.sub_total, ver
+ * subtotalCentsFromOrder), se devuelve su device_id — ese pedido es
+ * claramente suyo, no hace falta repartirlo a nadie más. Si hay cero
+ * coincidencias, o dos o más estaciones distintas coinciden en el mismo
+ * precio a la vez (raro, pero posible con precios redondos habituales),
+ * se devuelve null: no hay forma fiable de saber de quién es, así que se
+ * reparte a todos los dispositivos activos como red de seguridad — nunca
+ * se debe perder una etiqueta por no acertar el emparejamiento.
+ */
+async function resolveExclusiveDevice(
+  tenantId: string,
+  subtotalCents: number | null | undefined,
+  fechaDetectado: string
+): Promise<string | null> {
+  if (subtotalCents == null) return null;
+  const center = new Date(fechaDetectado).getTime();
+  const since = new Date(center - PRICE_MATCH_WINDOW_MS).toISOString();
+  const until = new Date(center + PRICE_MATCH_WINDOW_MS).toISOString();
+  const priceLow = (subtotalCents - PRICE_MATCH_TOLERANCE_CENTS) / 100;
+  const priceHigh = (subtotalCents + PRICE_MATCH_TOLERANCE_CENTS) / 100;
+
+  const { data: events } = await supabaseAdmin
+    .from("auction_events_v2")
+    .select("station_id")
+    .eq("tenant_id", tenantId)
+    .not("station_id", "is", null)
+    .gte("price_value", priceLow)
+    .lte("price_value", priceHigh)
+    .gte("detected_at", since)
+    .lte("detected_at", until);
+
+  const distinctDevices = new Set((events ?? []).map((e) => e.station_id as string));
+  return distinctDevices.size === 1 ? [...distinctDevices][0] : null;
+}
 
 /**
  * Consultado cada pocos segundos por la pestaña de Pedidos (API): devuelve
@@ -25,16 +72,25 @@ const DEVICE_BROADCAST_WINDOW_MS = 4 * 60 * 60 * 1000;
  *
  * device_id (opcional): con "Imprimir también en otros ordenadores"
  * activado en Pedidos (API), cada ordenador manda un identificador propio
- * (generado y guardado solo en su navegador, ver TikTokPrintWatcher) y deja
- * de competir por la exclusiva de label_delivered_at — en su lugar, cada
- * pedido se entrega UNA VEZ a cada device_id distinto que lo pida (tabla
- * order_print_deliveries), siempre dentro de la misma tienda (shop_id) que
- * ese ordenador tenga seleccionada, para no imprimir etiquetas de otro
- * directo/tienda del mismo tenant. Sin device_id, el comportamiento es
- * exactamente el de siempre: un pedido va a quien pregunte primero y solo a
- * ese (reclamo atómico vía label_delivered_at IS NULL) — así esta vía
- * también sirve de red de seguridad si la extensión cobra un pedido pero
- * falla al imprimirlo.
+ * (compartido con la extensión vía device-bridge.js si está instalada, ver
+ * TikTokPrintWatcher) y deja de competir por la exclusiva de
+ * label_delivered_at — en su lugar, cada pedido se reparte así:
+ *
+ *   1. Si una sola estación ganó una subasta al mismo precio hace poco
+ *      (resolveExclusiveDevice), el pedido se entrega SOLO a esa estación —
+ *      cubre el caso de dos directos simultáneos en la misma tienda
+ *      (mismo shop_id, no distinguible por la API de TikTok de ninguna otra
+ *      forma) sin duplicar etiquetas.
+ *   2. Si no hay coincidencia clara (cero, o dos estaciones al mismo precio
+ *      a la vez), se entrega a TODOS los dispositivos activos como red de
+ *      seguridad — nunca se pierde una etiqueta por no acertar quién ganó.
+ *
+ * Siempre dentro de la misma tienda (shop_id) que ese ordenador tenga
+ * seleccionada, para no imprimir etiquetas de otro directo/tienda del mismo
+ * tenant. Sin device_id, el comportamiento es exactamente el de siempre: un
+ * pedido va a quien pregunte primero y solo a ese (reclamo atómico vía
+ * label_delivered_at IS NULL) — así esta vía también sirve de red de
+ * seguridad si la extensión cobra un pedido pero falla al imprimirlo.
  */
 export async function GET(req: NextRequest) {
   const user = await getSessionUser();
@@ -67,6 +123,10 @@ export async function GET(req: NextRequest) {
     const { data: candidates } = await query.order("fecha_detectado", { ascending: true }).limit(MAX_PER_POLL);
 
     for (const candidate of candidates ?? []) {
+      const subtotalCents = (candidate.raw_payload as { subtotal_cents?: number } | null)?.subtotal_cents;
+      const exclusiveDevice = await resolveExclusiveDevice(user.tenant_id, subtotalCents, candidate.fecha_detectado as string);
+      if (exclusiveDevice && exclusiveDevice !== deviceId) continue; // es claramente de otra estación, no la mía
+
       const { error: insertError } = await supabaseAdmin
         .from("order_print_deliveries")
         .insert({ order_id: candidate.id, device_id: deviceId });

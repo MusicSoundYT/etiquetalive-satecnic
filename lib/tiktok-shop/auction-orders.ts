@@ -42,6 +42,21 @@ function priceCentsFromOrder(order: TikTokOrder): number {
 }
 
 /**
+ * Precio del artículo SIN el envío (payment.sub_total) — a diferencia de
+ * precio_cents (total_amount, con envío incluido, el que se cobra/muestra al
+ * cliente), este es el que de verdad coincide con la puja ganadora que se ve
+ * en el panel de la subasta en directo (confirmado en producción: puja 15€,
+ * sub_total "15", total_amount "18,87" con 3,87€ de envío aparte). Se guarda
+ * en raw_payload para poder emparejar, en pending-print, un pedido con la
+ * estación que ganó esa subasta por precio — el total_amount nunca
+ * coincidiría, varía según el envío de cada destino.
+ */
+export function subtotalCentsFromOrder(order: TikTokOrder): number | null {
+  const amount = Number(order.payment?.sub_total ?? "");
+  return Number.isFinite(amount) ? Math.round(amount * 100) : null;
+}
+
+/**
  * Trae pedidos de tipo "AUCTION" (subasta), más recientes primero.
  *
  * OJO: esto NO llama a la búsqueda de pedidos de TikTok (searchOrders) — se
@@ -153,7 +168,14 @@ export async function ensureLocalOrder(
     // completado...) que van llegando en webhooks posteriores.
     await supabaseAdmin
       .from("orders")
-      .update({ raw_payload: { source: "tiktok_shop_api", order_type: order.order_type, status: order.status } })
+      .update({
+        raw_payload: {
+          source: "tiktok_shop_api",
+          order_type: order.order_type,
+          status: order.status,
+          subtotal_cents: subtotalCentsFromOrder(order),
+        },
+      })
       .eq("id", existing.id);
     return existing as { id: string; tk: string };
   }
@@ -171,7 +193,12 @@ export async function ensureLocalOrder(
       precio_cents: priceCentsFromOrder(order),
       moneda: order.payment?.currency ?? "EUR",
       fecha_pedido: new Date(order.create_time * 1000).toISOString(),
-      raw_payload: { source: "tiktok_shop_api", order_type: order.order_type, status: order.status },
+      raw_payload: {
+        source: "tiktok_shop_api",
+        order_type: order.order_type,
+        status: order.status,
+        subtotal_cents: subtotalCentsFromOrder(order),
+      },
     })
     .select("id, tk")
     .single();

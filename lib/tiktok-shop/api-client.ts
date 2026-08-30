@@ -77,7 +77,7 @@ export type TikTokOrder = {
   status: string;
   create_time: number;
   update_time: number;
-  payment?: { total_amount?: string; currency?: string };
+  payment?: { total_amount?: string; sub_total?: string; currency?: string };
   recipient_address?: { name?: string; first_name?: string; last_name?: string };
   line_items?: Array<{ product_id?: string; product_name?: string; sale_price?: string; currency?: string }>;
 };

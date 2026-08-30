@@ -4,7 +4,7 @@ import { verifyWebhookSignature, type TikTokOrderStatusChangePayload } from "@/l
 import { getOrderDetails } from "@/lib/tiktok-shop/api-client";
 import { getValidAccessToken, getShopsForConnection, toApiCredentials } from "@/lib/tiktok-shop/connection";
 import { getAppCredentialsForTenant } from "@/lib/tiktok-shop/app-credentials";
-import { ensureLocalOrder, clienteFromOrder, CLIENTE_DESCONOCIDO } from "@/lib/tiktok-shop/auction-orders";
+import { ensureLocalOrder, clienteFromOrder, CLIENTE_DESCONOCIDO, subtotalCentsFromOrder } from "@/lib/tiktok-shop/auction-orders";
 import { claimAndChargePrint } from "@/lib/orders/charge-print";
 
 /** A qué tenant pertenece una tienda de TikTok, o null si no la conocemos. */
@@ -151,7 +151,12 @@ async function refreshClienteAndMaybePrint(tenantId: string, orderRowId: string,
         .update({
           cliente,
           cliente_verificado: true,
-          raw_payload: { source: "tiktok_shop_api", order_type: order.order_type, status: order.status },
+          raw_payload: {
+            source: "tiktok_shop_api",
+            order_type: order.order_type,
+            status: order.status,
+            subtotal_cents: subtotalCentsFromOrder(order),
+          },
         })
         .eq("id", orderRowId)
         .select("*")

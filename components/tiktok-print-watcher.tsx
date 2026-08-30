@@ -5,6 +5,12 @@ import { useEffect, useRef, useState } from "react";
 const POLL_INTERVAL_MS = 2000;
 const BROADCAST_STORAGE_KEY = "el_print_broadcast_enabled";
 const DEVICE_ID_STORAGE_KEY = "el_print_device_id";
+// La escribe device-bridge.js (extensión de Chrome) al cargar esta página, si
+// la extensión está instalada — ver ese fichero. Usar el MISMO id que la
+// extensión (en vez de generar uno propio) es lo que permite, en el
+// servidor, saber qué estación ganó una subasta a qué precio sin que nadie
+// configure nada a mano.
+const EXTENSION_DEVICE_ID_KEY = "el_extension_device_id";
 
 function printLabelHtml(html: string) {
   const iframe = document.createElement("iframe");
@@ -40,6 +46,8 @@ function printLabelHtml(html: string) {
  * distinto en cada ordenador/navegador. */
 function getOrCreateDeviceId(): string {
   try {
+    const fromExtension = localStorage.getItem(EXTENSION_DEVICE_ID_KEY);
+    if (fromExtension) return fromExtension;
     const existing = localStorage.getItem(DEVICE_ID_STORAGE_KEY);
     if (existing) return existing;
     const fresh = crypto.randomUUID();

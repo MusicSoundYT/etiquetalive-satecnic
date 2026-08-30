@@ -70,6 +70,25 @@
     });
   }
 
+  // Identidad de "este ordenador", compartida con la pestaña de Pedidos
+  // (API) a través de device-bridge.js (ver ese fichero) — permite que el
+  // servidor sepa qué estación ganó cada subasta sin que nadie escriba nada
+  // a mano. Se genera aquí mismo si esta es la primera vez que se usa la
+  // extensión en este ordenador (antes de que exista ninguna pestaña de
+  // Pedidos API abierta).
+  function getDeviceId() {
+    return new Promise(resolve => {
+      try {
+        chrome.storage.local.get(["el_ext_device_id"], r => {
+          if (r.el_ext_device_id) { resolve(r.el_ext_device_id); return; }
+          const id = crypto.randomUUID();
+          chrome.storage.local.set({ el_ext_device_id: id });
+          resolve(id);
+        });
+      } catch (e) { resolve(""); }
+    });
+  }
+
   function sendRuntimeMessage(message) {
     try {
       if (!chrome?.runtime?.id) return;
@@ -80,6 +99,8 @@
   async function postAuctionEvent(event) {
     const apiKey = await getApiKey();
     if (!apiKey) return; // sin clave configurada todavía, el servidor la rechazaría igualmente
+    const deviceId = await getDeviceId();
+    if (deviceId) event.deviceId = deviceId;
     const body = JSON.stringify({ version: VERSION, event });
     try {
       await fetch(apiBase() + "/api/auction/event", {
