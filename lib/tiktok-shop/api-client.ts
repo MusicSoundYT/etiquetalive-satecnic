@@ -80,6 +80,12 @@ export type TikTokOrder = {
   payment?: { total_amount?: string; sub_total?: string; currency?: string };
   recipient_address?: { name?: string; first_name?: string; last_name?: string };
   line_items?: Array<{ product_id?: string; product_name?: string; sale_price?: string; currency?: string }>;
+  // Identificador interno de TikTok para el comprador — a diferencia de
+  // recipient_address.name (que a veces viene enmascarado, comprobado en
+  // producción), este nunca lo está y se mantiene igual en todos los
+  // pedidos de la misma persona en esta tienda. Se usa en Caja TikTok para
+  // reconocer a un cliente ya conocido aunque el nombre venga tapado.
+  user_id?: string;
 };
 
 export type TikTokOrderSearchResult = {

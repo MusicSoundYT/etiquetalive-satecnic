@@ -63,6 +63,7 @@ type OrderRow = {
   precio_cents: number;
   moneda: string;
   fecha_pedido: string;
+  raw_payload: { user_id?: string | null } | null;
 };
 
 async function fetchProductNames(tenantId: string, orderIds: string[]): Promise<Record<string, string>> {
@@ -217,12 +218,12 @@ export async function fetchAuctionOrdersForRange(
   pair: CajaTikTokPair,
   startUtc: string,
   endUtc: string
-): Promise<{ orders: (OrderRow & { productName: string })[] }> {
+): Promise<{ orders: (OrderRow & { productName: string; userId: string | null })[] }> {
   const { tenantId } = pair;
 
   const { data: orderRows, error: ordersErr } = await supabaseAdmin
     .from("orders")
-    .select("external_order_id, cliente, precio_cents, moneda, fecha_pedido")
+    .select("external_order_id, cliente, precio_cents, moneda, fecha_pedido, raw_payload")
     .eq("tenant_id", tenantId)
     .eq("raw_payload->>source", "tiktok_shop_api")
     .gte("fecha_pedido", startUtc)
@@ -238,7 +239,18 @@ export async function fetchAuctionOrdersForRange(
     orders.map((o) => o.external_order_id)
   );
 
-  return { orders: orders.map((o) => ({ ...o, productName: productNameById[o.external_order_id] ?? "" })) };
+  // user_id: identificador interno de TikTok para el comprador, nunca
+  // enmascarado (a diferencia de "cliente") — Caja TikTok lo usa para
+  // reconocer a un cliente ya conocido aunque su nombre venga tapado en
+  // esta actualización. Puede faltar en pedidos guardados antes de que se
+  // empezara a capturar.
+  return {
+    orders: orders.map((o) => ({
+      ...o,
+      productName: productNameById[o.external_order_id] ?? "",
+      userId: o.raw_payload?.user_id ?? null,
+    })),
+  };
 }
 
 export async function exportAuctionOrdersForRange(

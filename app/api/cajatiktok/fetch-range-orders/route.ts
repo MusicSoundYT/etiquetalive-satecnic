@@ -39,6 +39,9 @@ export async function POST(req: NextRequest) {
         precio_cents: o.precio_cents,
         fecha_pedido: o.fecha_pedido,
         productName: o.productName,
+        // Identificador interno de TikTok para el comprador, nunca
+        // enmascarado — ver fetchAuctionOrdersForRange.
+        userId: o.userId,
       })),
     });
   } catch (err) {

@@ -198,6 +198,7 @@ export async function ensureLocalOrder(
         order_type: order.order_type,
         status: order.status,
         subtotal_cents: subtotalCentsFromOrder(order),
+        user_id: order.user_id ?? null,
       },
     })
     .select("id, tk")
