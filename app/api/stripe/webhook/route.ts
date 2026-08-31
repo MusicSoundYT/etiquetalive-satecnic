@@ -4,6 +4,8 @@ import { requireStripeEnv } from "@/lib/env";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { adjustBalance } from "@/lib/wallet/ledger";
 import { processReferralOnRecharge, reverseReferralBonusIfQualifying } from "@/lib/referrals/process-recharge";
+import { sendRechargeConfirmationEmail } from "@/lib/mail/send-recharge-confirmation-email";
+import { sendRechargeAdminNotificationEmail } from "@/lib/mail/send-recharge-admin-notification-email";
 import type Stripe from "stripe";
 
 // Necesario para poder verificar la firma sobre el body crudo.
@@ -35,6 +37,27 @@ async function handleCheckoutCompleted(event: Stripe.Event) {
   await supabaseAdmin.from("stripe_events").update({ related_user_id: userId }).eq("event_id", event.id);
 
   await processReferralOnRecharge(userId, amountCents, paymentIntentId);
+
+  // Aviso por correo — al cliente (confirmación) y a soporte (aviso
+  // interno). Nunca debe tumbar el webhook: el saldo ya está acreditado
+  // arriba, un fallo de envío de correo aquí no puede hacer que Stripe
+  // reintente y se acredite dos veces.
+  try {
+    const { data: user } = await supabaseAdmin.from("users").select("email, name").eq("id", userId).maybeSingle();
+    const to = user?.email ?? session.customer_email ?? undefined;
+    if (to) {
+      await sendRechargeConfirmationEmail(to, { name: user?.name ?? undefined, amountCents, balanceAfterCents });
+      await sendRechargeAdminNotificationEmail({
+        userEmail: to,
+        userId,
+        amountCents,
+        balanceAfterCents,
+        stripePaymentIntentId: paymentIntentId,
+      });
+    }
+  } catch (err) {
+    console.error("No se pudieron enviar los correos de recarga confirmada:", err);
+  }
 
   return balanceAfterCents;
 }

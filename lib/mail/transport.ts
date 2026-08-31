@@ -9,9 +9,9 @@ export const mailTransport = nodemailer.createTransport({
   auth: { user: env.smtp.user, pass: env.smtp.pass },
 });
 
-export async function sendMail(opts: { to: string; subject: string; html: string }) {
+export async function sendMail(opts: { to: string; subject: string; html: string; fromName?: string }) {
   await mailTransport.sendMail({
-    from: `"Etiqueta Live" <${env.smtp.user}>`,
+    from: `"${opts.fromName ?? "Etiqueta Live"}" <${env.smtp.user}>`,
     to: opts.to,
     subject: opts.subject,
     html: opts.html,

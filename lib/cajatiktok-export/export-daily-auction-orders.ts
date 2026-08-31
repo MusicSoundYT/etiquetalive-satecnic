@@ -442,3 +442,16 @@ export async function exportAuctionOrdersForRange(
 
   return { skipped: false, totalOrders: orders.length, totalClients: buyerKeys.length, importId };
 }
+
+/**
+ * Emails de todo el mundo (no solo admins) que pertenece a este grupo en
+ * Caja TikTok — usado para avisar por correo del resultado de la
+ * exportación automática diaria (ver app/api/cron/export-cajatiktok).
+ */
+export async function getGroupMemberEmails(grupoNombre: string): Promise<string[]> {
+  const caja = getCajaTikTokClient();
+  const { data: grupo } = await caja.from("grupos").select("id").eq("nombre", grupoNombre).maybeSingle();
+  if (!grupo) return [];
+  const { data: perfiles } = await caja.from("perfiles").select("email").eq("grupo_id", grupo.id);
+  return (perfiles ?? []).map((p) => p.email as string).filter(Boolean);
+}
