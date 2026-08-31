@@ -244,13 +244,34 @@ export async function fetchAuctionOrdersForRange(
   // reconocer a un cliente ya conocido aunque su nombre venga tapado en
   // esta actualización. Puede faltar en pedidos guardados antes de que se
   // empezara a capturar.
-  return {
-    orders: orders.map((o) => ({
-      ...o,
-      productName: productNameById[o.external_order_id] ?? "",
-      userId: o.raw_payload?.user_id ?? null,
-    })),
-  };
+  const mapped = orders.map((o) => ({
+    ...o,
+    productName: productNameById[o.external_order_id] ?? "",
+    userId: o.raw_payload?.user_id ?? null,
+  }));
+
+  // Dentro de UN MISMO lote, dos pedidos del mismo user_id pueden traer el
+  // nombre del comprador enmascarado en uno y completo en otro (comprobado
+  // en producción: mismo user_id, un pedido con "V***or M***id L***z" y
+  // otro con el nombre real) — sin esto, tanto "Importar sesión de TikTok"
+  // como la exportación automática diaria (que agrupan clientes por
+  // nombre, ver exportAuctionOrdersForRange) crearían dos clientes/cajas
+  // distintos para la misma persona dentro de la misma importación. Se
+  // homogeniza aquí: para cada user_id del lote se usa, en todos sus
+  // pedidos, el nombre menos enmascarado que se haya visto — así lo
+  // reciben ya corregido tanto esas dos vías como "Actualizar por API".
+  const looksMasked = (name: string) => name.includes("*");
+  const bestNameByUserId = new Map<string, string>();
+  for (const o of mapped) {
+    if (!o.userId) continue;
+    const current = bestNameByUserId.get(o.userId);
+    if (!current || (looksMasked(current) && !looksMasked(o.cliente))) bestNameByUserId.set(o.userId, o.cliente);
+  }
+  for (const o of mapped) {
+    if (o.userId && bestNameByUserId.has(o.userId)) o.cliente = bestNameByUserId.get(o.userId)!;
+  }
+
+  return { orders: mapped };
 }
 
 export async function exportAuctionOrdersForRange(
