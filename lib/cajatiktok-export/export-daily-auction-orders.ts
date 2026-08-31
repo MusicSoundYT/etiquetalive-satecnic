@@ -186,13 +186,21 @@ export async function exportDailyAuctionOrders(dateMadrid?: string): Promise<Dai
   return results;
 }
 
-export async function exportAuctionOrdersForRange(
+/**
+ * Solo lectura: los pedidos de subasta de este tenant en el rango dado, tal
+ * cual están en nuestra tabla "orders" — sin tocar la base de datos de Caja
+ * TikTok. Lo usan tanto exportAuctionOrdersForRange (que además ESCRIBE una
+ * importación nueva) como el endpoint de solo lectura fetch-range-orders
+ * (que la Edge Function "Actualizar por API" de Caja TikTok usa para
+ * fusionar pedidos nuevos con la importación YA activa, en vez de crear una
+ * importación aparte).
+ */
+export async function fetchAuctionOrdersForRange(
   pair: CajaTikTokPair,
   startUtc: string,
-  endUtc: string,
-  nombreArchivo?: string
-): Promise<{ skipped: boolean; totalOrders: number; totalClients: number; importId?: string }> {
-  const { tenantId, grupoNombre } = pair;
+  endUtc: string
+): Promise<{ orders: (OrderRow & { productName: string })[] }> {
+  const { tenantId } = pair;
 
   const { data: orderRows, error: ordersErr } = await supabaseAdmin
     .from("orders")
@@ -202,15 +210,32 @@ export async function exportAuctionOrdersForRange(
     .gte("fecha_pedido", startUtc)
     .lt("fecha_pedido", endUtc)
     .order("fecha_pedido", { ascending: true });
-  if (ordersErr) throw new Error(`No se pudieron leer los pedidos de subasta del día: ${ordersErr.message}`);
+  if (ordersErr) throw new Error(`No se pudieron leer los pedidos de subasta del rango: ${ordersErr.message}`);
 
   const orders = (orderRows ?? []) as OrderRow[];
-  if (!orders.length) return { skipped: true, totalOrders: 0, totalClients: 0 };
+  if (!orders.length) return { orders: [] };
 
   const productNameById = await fetchProductNames(
     tenantId,
     orders.map((o) => o.external_order_id)
   );
+
+  return { orders: orders.map((o) => ({ ...o, productName: productNameById[o.external_order_id] ?? "" })) };
+}
+
+export async function exportAuctionOrdersForRange(
+  pair: CajaTikTokPair,
+  startUtc: string,
+  endUtc: string,
+  nombreArchivo?: string
+): Promise<{ skipped: boolean; totalOrders: number; totalClients: number; importId?: string }> {
+  const { grupoNombre } = pair;
+
+  const { orders: fetchedOrders } = await fetchAuctionOrdersForRange(pair, startUtc, endUtc);
+  if (!fetchedOrders.length) return { skipped: true, totalOrders: 0, totalClients: 0 };
+  const orders: OrderRow[] = fetchedOrders;
+  const productNameById: Record<string, string> = {};
+  for (const o of fetchedOrders) productNameById[o.external_order_id] = o.productName;
 
   const caja = getCajaTikTokClient();
 
