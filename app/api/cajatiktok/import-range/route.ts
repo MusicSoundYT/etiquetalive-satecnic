@@ -28,7 +28,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await exportAuctionOrdersForRange(pair, body.startUtc, body.endUtc, body.nombreArchivo);
+    // true: a diferencia de la exportación automática diaria, este endpoint
+    // solo lo llama el botón manual "Importar sesión de TikTok" — quien lo
+    // pulsa espera trabajar con ese Excel al momento, no tener que ir a
+    // Historial de Excel a marcarlo activo a mano primero.
+    const result = await exportAuctionOrdersForRange(pair, body.startUtc, body.endUtc, body.nombreArchivo, true);
     return NextResponse.json(result);
   } catch (err) {
     console.error("[Caja TikTok] Error en la importación por rango:", err);

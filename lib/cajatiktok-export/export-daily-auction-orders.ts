@@ -167,9 +167,27 @@ export async function exportDailyAuctionOrders(dateMadrid?: string): Promise<Dai
   const [yyyy, mm, dd] = date.split("-");
   const nombreArchivo = `Auto_TikTok_${dd}-${mm}-${yyyy}.xlsx`;
 
+  const caja = getCajaTikTokClient();
+
   const results: DailyExportResult[] = [];
   for (const pair of CAJATIKTOK_TENANTS) {
     try {
+      // El grupo puede haber desactivado la importación automática (Menú →
+      // interruptor "Importación automática del día anterior" en Caja
+      // TikTok, solo admin) — por ejemplo, un cliente que no hace directo
+      // todos los días y no quiere una importación vacía cada mañana. Se
+      // trata como "sin nada que exportar" si está desactivada, no como un
+      // error.
+      const { data: grupo } = await caja
+        .from("grupos")
+        .select("importacion_automatica_habilitada")
+        .eq("nombre", pair.grupoNombre)
+        .maybeSingle();
+      if (grupo?.importacion_automatica_habilitada === false) {
+        results.push({ grupoNombre: pair.grupoNombre, date, skipped: true, totalOrders: 0, totalClients: 0 });
+        continue;
+      }
+
       const result = await exportAuctionOrdersForRange(pair, startUtc, endUtc, nombreArchivo);
       results.push({ grupoNombre: pair.grupoNombre, date, ...result });
     } catch (err) {
@@ -227,7 +245,13 @@ export async function exportAuctionOrdersForRange(
   pair: CajaTikTokPair,
   startUtc: string,
   endUtc: string,
-  nombreArchivo?: string
+  nombreArchivo?: string,
+  // Solo lo pasa a true /api/cajatiktok/import-range (el botón manual
+  // "Importar sesión de TikTok" de Caja TikTok) — la exportación
+  // automática diaria (exportDailyAuctionOrders) sigue dejando la
+  // importación inactiva por defecto, a la espera de que alguien la revise
+  // y la marque a mano, tal como se decidió para esa vía.
+  activarComoActiva = false
 ): Promise<{ skipped: boolean; totalOrders: number; totalClients: number; importId?: string }> {
   const { grupoNombre } = pair;
 
@@ -296,10 +320,23 @@ export async function exportAuctionOrdersForRange(
     nombre_archivo: nombreArchivo ?? defaultRangeNombreArchivo(startUtc, endUtc),
     total_pedidos: orders.length,
     total_clientes: buyerKeys.length,
-    activa: false,
+    activa: activarComoActiva,
     grupo_id: grupoId,
   });
   if (importErr) throw new Error(`No se pudo crear la importación en Caja TikTok: ${importErr.message}`);
+
+  if (activarComoActiva) {
+    // Mismo mecanismo que saveImportToSupabase() en el repo de Caja TikTok
+    // al confirmar la subida de un Excel: solo puede haber una importación
+    // activa por grupo a la vez.
+    const { error: deactivateErr } = await caja
+      .from("importaciones")
+      .update({ activa: false })
+      .eq("activa", true)
+      .eq("grupo_id", grupoId)
+      .neq("id", importId);
+    if (deactivateErr) throw new Error(`No se pudieron desactivar las importaciones anteriores: ${deactivateErr.message}`);
+  }
 
   // Dos clientes distintos no pueden compartir número de caja dentro de la
   // misma importación (restricción añadida en Caja TikTok tras verlo en
