@@ -98,12 +98,26 @@ async function refreshOneClient(pair: CajaTikTokPair): Promise<{ checked: number
         const orders = await getOrderDetails(toApiCredentials(connection), shop.shop_cipher, chunk);
         for (const o of orders) estadoByOrderId[o.id] = mapTikTokStatusToEstadoEnvio(o.status);
       } catch (err) {
-        // Visto en producción: un solo pedido_tiktok inválido (p. ej. de una
-        // importación manual con un ID mal escrito) tira abajo el lote
-        // entero de 20 — y con él, TODA la ejecución, cada 20 minutos, sin
-        // actualizar ni uno de los pedidos válidos de los demás lotes. Se
-        // salta solo ESTE lote y se sigue con el resto.
-        console.error(`[Caja TikTok] Lote de estados fallido (${chunk.join(", ")}):`, err);
+        // Visto en producción: un solo pedido_tiktok inválido tira abajo el
+        // lote entero de 20 ("exist wrong order_id") — y sin más, ESE mismo
+        // lote se queda atascado para siempre: en cada pasada del cron vuelve
+        // a fallar por el mismo id inválido, así que los otros ~19 pedidos
+        // válidos del lote nunca llegan a actualizar su estado (confirmado:
+        // TikTok combina automáticamente varios pedidos de un mismo
+        // comprador en un solo envío antes de despacharlos, y el id del
+        // pedido absorbido deja de ser válido para esta API — no es un error
+        // nuestro ni algo puntual, va a seguir pasando). En vez de descartar
+        // el lote entero, se reintenta pedido a pedido: así solo se pierde el
+        // (o los) id realmente inválido y el resto sigue actualizándose.
+        console.error(`[Caja TikTok] Lote de estados fallido (${chunk.join(", ")}), reintentando uno a uno:`, err);
+        for (const oneId of chunk) {
+          try {
+            const [order] = await getOrderDetails(toApiCredentials(connection), shop.shop_cipher, [oneId]);
+            if (order) estadoByOrderId[order.id] = mapTikTokStatusToEstadoEnvio(order.status);
+          } catch (oneErr) {
+            console.error(`[Caja TikTok] Pedido con id inválido para TikTok (probablemente combinado con otro): ${oneId}`, oneErr);
+          }
+        }
       }
     }
   }

@@ -137,6 +137,18 @@ export async function POST(req: NextRequest) {
       const message = err instanceof Error ? err.message : "Error desconocido.";
       if (message.includes("code 21011006") || message.includes("already shipped")) {
         results.push({ orderId, packageId, alreadyShipped: true });
+      } else if (message.includes("code 98001004") || message.includes("wrong order_id")) {
+        // TikTok combina automáticamente varios pedidos del mismo comprador
+        // en un solo envío antes de despacharlos (confirmado en producción:
+        // un pedido cuyos artículos acaban repartidos en el envío de otro
+        // pedido deja de existir como tal para esta API). No hay nada que
+        // reintentar aquí — ese pedido concreto ya se envió como parte de
+        // otro, hay que revisarlo a mano en Seller Center.
+        results.push({
+          orderId,
+          error:
+            "TikTok combinó este pedido con otro del mismo comprador antes de enviarlo, así que ya no existe por separado. Revísalo en Seller Center — seguramente ya está enviado dentro de otro paquete.",
+        });
       } else {
         console.error(`[Caja TikTok] Error generando etiqueta de envío del pedido ${orderId}:`, err);
         results.push({ orderId, error: message });
