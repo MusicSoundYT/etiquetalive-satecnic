@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.52-auction";
+  const VERSION = "el-1.6.53-auction";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const SCAN_INTERVAL_MS = 2500;
   const MUTATION_DEBOUNCE_MS = 1000;
@@ -294,22 +294,23 @@
   function scanDom(reason = "tick") {
     if (!/shop\.tiktok\.com\/streamer\/live/i.test(location.href)) return;
     try { checkFinishedBanner(); } catch (_) {}
+    // checkWinnerLabel es, con diferencia, la señal más fiable: lee un único
+    // bloque ("Ganador de esta ronda: X") que TikTok sustituye en el sitio en
+    // cuanto cambia — nunca acumula histórico.
+    //
+    // El resto de este escaneo (candidateBlocksFromDom -> buildEventFromText/
+    // buildActivityEventsFromText) lee en cambio el feed de "Actividad" del
+    // directo, que SÍ acumula histórico y no se vacía nunca — confirmado en
+    // producción con un directo real: en varios minutos seguidos solo
+    // aparecían los mismos 5-6 ganadores de rondas ya antiguas, repitiéndose
+    // cada 15s (el cooldown de emitAuctionEvent) sin que entrara ni una
+    // ronda nueva. Con dos directos a la vez, precios habituales (4€, 6€...)
+    // acababan coincidiendo en los DOS ordenadores a base de puro ruido
+    // antiguo, así que el reparto por precio (resolveExclusiveDevice) se
+    // quedaba sin ninguna coincidencia limpia con la que repartir un pedido
+    // nuevo. Se desactiva esta vía por ahora — checkWinnerLabel cubre el
+    // mismo caso de uso sin ese problema.
     try { checkWinnerLabel(); } catch (_) {}
-    if (scanning) return;
-    scanning = true;
-    try {
-      const blocks = candidateBlocksFromDom();
-      for (const block of blocks) {
-        const meta = { reason, rect: { top: block.top, left: block.left, width: block.width, height: block.height } };
-        const activityEvents = buildActivityEventsFromText(block.txt, "auction_activity_dom", meta);
-        if (activityEvents.length) {
-          for (const event of activityEvents) emitAuctionEvent(event);
-          continue;
-        }
-        const event = buildEventFromText(block.txt, "auction_dom", meta);
-        if (event) emitAuctionEvent(event);
-      }
-    } finally { scanning = false; }
   }
 
   function scheduleScan(reason) {
