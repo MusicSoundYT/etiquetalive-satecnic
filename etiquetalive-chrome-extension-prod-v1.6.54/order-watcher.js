@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.53";
+  const VERSION = "el-1.6.54";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const DEFAULT_CONFIG = {
     apiBase: API_BASE,
@@ -394,18 +394,14 @@
 
   function printLabel(labelHtml, tk) {
     if (!labelHtml) return;
-    try {
-      const w = window.open('', '_blank', 'width=420,height=320');
-      if (w) {
-        w.document.open();
-        w.document.write(labelHtml);
-        w.document.close();
-        protectWindowContent(w);
-        waitForImagesAndPrint(w, () => { try { w.close(); } catch(e) {} }, tk);
-        return;
-      }
-    } catch(e) {}
-
+    // Antes se intentaba primero window.open() (ventana nueva) y solo se
+    // caía al iframe si eso fallaba — pero la impresión silenciosa de Chrome
+    // (--kiosk-printing) no cubre de forma fiable una ventana nueva abierta
+    // así, solo el propio documento de la página (confirmado en producción:
+    // Pedidos (API), que SIEMPRE ha usado directamente un iframe, nunca dio
+    // problemas de diálogo de impresión colgado; esta vía, con window.open
+    // por delante, sí). Se usa directamente el iframe, igual que Pedidos
+    // (API), para que las dos vías impriman exactamente igual de bien.
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
     iframe.style.right = '0';
