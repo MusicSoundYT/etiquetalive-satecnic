@@ -1,4 +1,4 @@
-const VERSION = "el-1.6.45-auction";
+const VERSION = "el-1.6.48-auction";
 const API_BASE = "https://etiquetalivetiktok.satecnic.es";
 const DEFAULT_CONFIG = {
   configVersion: "local-default-1",
@@ -37,6 +37,30 @@ function getApiKey() {
   return new Promise((resolve) => {
     try { chrome.storage.local.get(["el_api_key"], (r) => resolve(r.el_api_key || "")); }
     catch (_) { resolve(""); }
+  });
+}
+
+// Mismo id y misma clave de storage que device-bridge.js (que lo copia al
+// localStorage de la página de Pedidos (API) para que los dos lados
+// compartan identidad de "este ordenador" sin configurarlo a mano). Se lee
+// aquí también porque quien manda el aviso de ganador de subasta es este
+// service worker, no el content script — antes nunca se incluía este id en
+// el aviso, así que el servidor jamás podía saber qué ordenador ganó cada
+// subasta a qué precio (ver resolveExclusiveDevice en pending-print),
+// y con dos directos a la vez en la misma tienda cada etiqueta se repartía
+// a TODOS los ordenadores activos en vez de solo al que le tocaba.
+function getDeviceId() {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.get(["el_ext_device_id"], (r) => {
+        let id = r.el_ext_device_id;
+        if (!id) {
+          id = crypto.randomUUID();
+          chrome.storage.local.set({ el_ext_device_id: id });
+        }
+        resolve(id);
+      });
+    } catch (_) { resolve(""); }
   });
 }
 
@@ -403,7 +427,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "EL_AUCTION_WINNER_DETECTED") {
     const event = message.event || {};
     console.log("[EtiquetaLive] background: EL_AUCTION_WINNER_DETECTED recibido", event);
-    postToEtiquetaLive("/api/auction/event", { version: VERSION, event, forwardedAt: new Date().toISOString() });
+    getDeviceId().then((deviceId) => {
+      postToEtiquetaLive("/api/auction/event", { version: VERSION, event: { ...event, deviceId }, forwardedAt: new Date().toISOString() });
+    });
     notifySellerOrderTabs(event);
     sendResponse({ ok: true });
     return false;
