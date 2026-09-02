@@ -9,9 +9,19 @@ const MAX_PER_POLL = 5;
 // Ventana de tiempo que se mira cuando hay dispositivos con "imprimir
 // también en otros ordenadores" activado (device_id) — sin esto, activarlo
 // por primera vez en un ordenador reimprimiría TODO el historial de pedidos
-// cobrados desde siempre. Con esto, solo entra en juego lo detectado en las
-// últimas horas.
-const DEVICE_BROADCAST_WINDOW_MS = 4 * 60 * 60 * 1000;
+// cobrados desde siempre. Con esto, solo entra en juego lo detectado hace
+// poco.
+//
+// 4 horas (valor original) resultó ser demasiado en la práctica: cada vez
+// que se reinstala la extensión (o se activa/desactiva este interruptor por
+// primera vez desde un navegador nuevo) se genera un id de dispositivo
+// nuevo, y ese id "nunca ha entregado nada" a ojos del sistema — así que se
+// le mandaba de golpe TODO lo cobrado en las últimas 4 horas, aunque ya se
+// hubiera impreso antes por otra vía (visto en producción: una ráfaga de
+// decenas de etiquetas viejas al activar el interruptor). Con un directo en
+// marcha, 15 minutos es más que suficiente para no perder nada realmente
+// reciente sin arrastrar horas de historial.
+const DEVICE_BROADCAST_WINDOW_MS = 15 * 60 * 1000;
 
 /**
  * Consultado cada pocos segundos por la pestaña de Pedidos (API): devuelve
