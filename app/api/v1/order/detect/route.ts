@@ -6,6 +6,7 @@ import { corsPreflight, withCors } from "@/lib/cors";
 import { claimAndChargePrint } from "@/lib/orders/charge-print";
 import { getDefaultTemplate } from "@/lib/labels/get-default-template";
 import { generateLabelHtml } from "@/lib/labels/render";
+import { resolveExclusiveDevice } from "@/lib/orders/resolve-exclusive-device";
 
 export function OPTIONS(req: NextRequest) {
   return corsPreflight(req);
@@ -24,6 +25,11 @@ const bodySchema = z.object({
   // su copia local de la config — el servidor vuelve a comprobar el ajuste
   // real del tenant antes de cobrar, no se fía solo de este flag.
   auto_print_eligible: z.boolean().optional().default(false),
+  // Identidad de "este ordenador" (compartida con Pedidos (API) y con los
+  // avisos de subasta vía device-bridge.js) — permite, cuando hay dos
+  // directos simultáneos en la misma tienda, saber si ESTE pedido es
+  // claramente de otro ordenador antes de cobrarlo y devolver la etiqueta.
+  deviceId: z.string().trim().max(80).optional(),
 });
 
 /**
@@ -225,6 +231,25 @@ export async function POST(req: NextRequest) {
 
   if (!tenant?.auto_print_enabled) {
     return withCors(req, NextResponse.json({ tk: order.tk, order_id: order.id }));
+  }
+
+  // Dos directos a la vez en la misma tienda (mismo shop_id, no distinguible
+  // por la API de TikTok de ninguna otra forma): la extensión de CADA
+  // ordenador ve la MISMA lista de pedidos en Seller Center, así que sin
+  // esto el primero en detectar un pedido se lo cobraba e imprimía aunque
+  // fuera la venta del directo del OTRO ordenador — mismo criterio que ya
+  // usa Pedidos (API) (ver resolveExclusiveDevice). Si el pedido es
+  // claramente de otro dispositivo, no se cobra ni se imprime aquí: se deja
+  // que sea la propia detección de ESE otro ordenador la que lo reclame
+  // (ve la misma lista de pedidos, así que también le llegará). Si no hay
+  // forma fiable de saberlo (cero o varias coincidencias), se cobra igual
+  // que siempre — nunca se debe perder una etiqueta por no acertar de quién
+  // es.
+  if (body.deviceId) {
+    const exclusiveDevice = await resolveExclusiveDevice(tenantId, order.precio_cents, order.fecha_detectado ?? order.created_at);
+    if (exclusiveDevice && exclusiveDevice !== body.deviceId) {
+      return withCors(req, NextResponse.json({ tk: order.tk, order_id: order.id }));
+    }
   }
 
   const result = await claimAndChargePrint(order, tenantId);

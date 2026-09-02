@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth/session";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getDefaultTemplate } from "@/lib/labels/get-default-template";
 import { generateLabelHtml } from "@/lib/labels/render";
+import { resolveExclusiveDevice } from "@/lib/orders/resolve-exclusive-device";
 
 const MAX_PER_POLL = 5;
 // Ventana de tiempo que se mira cuando hay dispositivos con "imprimir
@@ -11,53 +12,6 @@ const MAX_PER_POLL = 5;
 // cobrados desde siempre. Con esto, solo entra en juego lo detectado en las
 // últimas horas.
 const DEVICE_BROADCAST_WINDOW_MS = 4 * 60 * 60 * 1000;
-// Margen a cada lado de fecha_detectado del pedido en el que se buscan
-// ganadores de subasta con el mismo precio — el pedido tarda algo en
-// crearse tras terminar la ronda (visto en producción: normalmente
-// segundos, alguna vez algo más), y el reloj de cada ordenador puede ir
-// ligeramente desajustado.
-const PRICE_MATCH_WINDOW_MS = 2 * 60 * 1000;
-// Los importes vienen de convertir texto a número en dos sitios distintos
-// (la extensión y la API) — un céntimo de margen absorbe redondeos sin
-// abrir la puerta a precios de verdad distintos.
-const PRICE_MATCH_TOLERANCE_CENTS = 1;
-
-/**
- * Si, en la ventana de tiempo alrededor de este pedido, UNA SOLA estación
- * ganó una subasta al mismo precio (payment.sub_total, ver
- * subtotalCentsFromOrder), se devuelve su device_id — ese pedido es
- * claramente suyo, no hace falta repartirlo a nadie más. Si hay cero
- * coincidencias, o dos o más estaciones distintas coinciden en el mismo
- * precio a la vez (raro, pero posible con precios redondos habituales),
- * se devuelve null: no hay forma fiable de saber de quién es, así que se
- * reparte a todos los dispositivos activos como red de seguridad — nunca
- * se debe perder una etiqueta por no acertar el emparejamiento.
- */
-async function resolveExclusiveDevice(
-  tenantId: string,
-  subtotalCents: number | null | undefined,
-  fechaDetectado: string
-): Promise<string | null> {
-  if (subtotalCents == null) return null;
-  const center = new Date(fechaDetectado).getTime();
-  const since = new Date(center - PRICE_MATCH_WINDOW_MS).toISOString();
-  const until = new Date(center + PRICE_MATCH_WINDOW_MS).toISOString();
-  const priceLow = (subtotalCents - PRICE_MATCH_TOLERANCE_CENTS) / 100;
-  const priceHigh = (subtotalCents + PRICE_MATCH_TOLERANCE_CENTS) / 100;
-
-  const { data: events } = await supabaseAdmin
-    .from("auction_events_v2")
-    .select("station_id")
-    .eq("tenant_id", tenantId)
-    .not("station_id", "is", null)
-    .gte("price_value", priceLow)
-    .lte("price_value", priceHigh)
-    .gte("detected_at", since)
-    .lte("detected_at", until);
-
-  const distinctDevices = new Set((events ?? []).map((e) => e.station_id as string));
-  return distinctDevices.size === 1 ? [...distinctDevices][0] : null;
-}
 
 /**
  * Consultado cada pocos segundos por la pestaña de Pedidos (API): devuelve

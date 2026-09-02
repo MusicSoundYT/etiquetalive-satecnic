@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.45";
+  const VERSION = "el-1.6.52";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const DEFAULT_CONFIG = {
     apiBase: API_BASE,
@@ -171,6 +171,23 @@
     return new Promise(resolve => {
       try { chrome.storage.local.get(["el_api_key"], r => resolve(r.el_api_key || "")); }
       catch(e) { resolve(""); }
+    });
+  }
+
+  // Mismo id y misma clave de storage que device-bridge.js/background.js —
+  // lo manda /api/v1/order/detect para saber, con dos directos a la vez en
+  // la misma tienda, si un pedido detectado aquí es claramente de OTRO
+  // ordenador (ver resolveExclusiveDevice en el servidor) antes de cobrarlo
+  // e imprimirlo.
+  function getDeviceId() {
+    return new Promise(resolve => {
+      try {
+        chrome.storage.local.get(["el_ext_device_id"], r => {
+          let id = r.el_ext_device_id;
+          if (!id) { id = crypto.randomUUID(); chrome.storage.local.set({ el_ext_device_id: id }); }
+          resolve(id);
+        });
+      } catch(e) { resolve(""); }
     });
   }
 
@@ -436,6 +453,7 @@
       return;
     }
 
+    const deviceId = await getDeviceId();
     for (const c of valid) {
       const p = c.parsed;
       if (sessionState.detectedIds.includes(p.orderId) || sessionState.ignoredIds.includes(p.orderId) || sessionState.printedIds.includes(p.orderId)) continue;
@@ -447,7 +465,8 @@
         moneda: "EUR",
         fecha_pedido: normalizeOrderDate(p.orderDate),
         raw: c.raw || "",
-        auto_print_eligible: autoPrint
+        auto_print_eligible: autoPrint,
+        deviceId
       });
       countSessionDetected(p.orderId);
       if (result?.label_html && autoPrint) {
