@@ -1,12 +1,21 @@
 (() => {
-  const VERSION = "el-1.6.50-auction";
+  const VERSION = "el-1.6.51-auction";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const SCAN_INTERVAL_MS = 2500;
   const MUTATION_DEBOUNCE_MS = 1000;
   const EVENT_COOLDOWN_MS = 15000;
 
-  let lastSig = "";
-  let lastEventAt = 0;
+  // Dedup real de eventos ya mandados al servidor (no solo del último) —
+  // ver el porqué justo encima de emitAuctionEvent más abajo: el feed de
+  // "Actividad" del directo no se vacía nunca, así que cada barrido (cada
+  // 2,5s) vuelve a encontrar TODAS las rondas ya terminadas de la sesión,
+  // no solo la última. Comparar solo contra la última firma vista dejaba
+  // pasar cada ronda antigua una y otra vez en cuanto aparecía una ronda
+  // distinta por medio (visto en producción: cientos de eventos duplicados
+  // de los mismos 2-3 ganadores en pocos minutos) — eso inundaba de ruido
+  // la ventana de precios con la que se reparte cada etiqueta por
+  // ordenador, y ahogaba las rondas realmente nuevas.
+  const sentSignatures = new Map(); // firma -> última vez mandada
   let scanTimer = null;
   let scanning = false;
 
@@ -255,9 +264,19 @@
   function emitAuctionEvent(event) {
     const sig = [event.winner, event.productName, event.price, event.auctionId].join("|").toLowerCase();
     const now = Date.now();
-    if (!sig || (sig === lastSig && now - lastEventAt < EVENT_COOLDOWN_MS)) return;
-    lastSig = sig;
-    lastEventAt = now;
+    if (!sig) return;
+    // Dedup real: cada firma tiene su PROPIO cooldown, así que una ronda
+    // antigua que sigue visible en el feed no se reenvía aunque por medio
+    // haya aparecido otra ronda distinta (ver comentario junto a
+    // sentSignatures arriba).
+    const lastSeen = sentSignatures.get(sig);
+    if (lastSeen && now - lastSeen < EVENT_COOLDOWN_MS) return;
+    sentSignatures.set(sig, now);
+    if (sentSignatures.size > 300) {
+      for (const [key, seenAt] of sentSignatures) {
+        if (now - seenAt >= EVENT_COOLDOWN_MS) sentSignatures.delete(key);
+      }
+    }
     // OJO: ya NO se avisa aquí a Seller para que recargue (se quitó el
     // sendRuntimeMessage de EL_AUCTION_WINNER_DETECTED). Esta vía lee el feed
     // de actividad de la página ("X ha ganado el artículo de la subasta..."),
