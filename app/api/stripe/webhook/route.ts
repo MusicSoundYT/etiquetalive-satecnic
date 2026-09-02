@@ -75,7 +75,7 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event) {
   const userId = intent.metadata.user_id;
   if (!userId) return;
 
-  await adjustBalance(userId, intent.amount, "recharge", {
+  const { balanceAfterCents } = await adjustBalance(userId, intent.amount, "recharge", {
     description: "Autorecarga de saldo",
     stripePaymentIntentId: intent.id,
   });
@@ -86,6 +86,29 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event) {
     .eq("user_id", userId);
 
   await supabaseAdmin.from("stripe_events").update({ related_user_id: userId }).eq("event_id", event.id);
+
+  // Mismo aviso por correo que una recarga manual (handleCheckoutCompleted) —
+  // se quedó sin él al añadirlo la primera vez, porque una autorecarga no
+  // pasa por el checkout, pasa por aquí. Nunca debe tumbar el webhook.
+  try {
+    const { data: user } = await supabaseAdmin.from("users").select("email, name").eq("id", userId).maybeSingle();
+    if (user?.email) {
+      await sendRechargeConfirmationEmail(user.email, {
+        name: user.name ?? undefined,
+        amountCents: intent.amount,
+        balanceAfterCents,
+      });
+      await sendRechargeAdminNotificationEmail({
+        userEmail: user.email,
+        userId,
+        amountCents: intent.amount,
+        balanceAfterCents,
+        stripePaymentIntentId: intent.id,
+      });
+    }
+  } catch (err) {
+    console.error("No se pudieron enviar los correos de autorecarga confirmada:", err);
+  }
 }
 
 /** Si la autorecarga falla (tarjeta rechazada, requiere 3DS...), se desactiva para no reintentar en bucle. */
