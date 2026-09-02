@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.49-auction";
+  const VERSION = "el-1.6.50-auction";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const SCAN_INTERVAL_MS = 2500;
   const MUTATION_DEBOUNCE_MS = 1000;
@@ -364,56 +364,77 @@
   function checkWinnerLabel() {
     if (!/shop\.tiktok\.com\/streamer\/live/i.test(location.href)) return;
     try {
-      const divs = document.querySelectorAll("div");
-      for (const el of divs) {
+      // HTML real de producción: el bloque "Ganador de esta ronda: NB : 2 €"
+      // vive en un div que NO incluye el widget vecino "Artículos vendidos:
+      // N" — pero ese div está anidado dentro de otros dos más anchos
+      // (fila completa) que SÍ combinan ambos textos, y como
+      // querySelectorAll devuelve primero los antecesores, esos divs más
+      // anchos se encuentran ANTES que el bueno. Antes, en cuanto se
+      // encontraba el primer div que empezaba por "Ganador de esta ronda:"
+      // se cortaba la búsqueda (con o sin éxito) — así que el div ancho
+      // (con la cola de "Artículos vendidos" pegada) ganaba siempre y el
+      // bueno, más específico, nunca se llegaba a mirar. Ahora se prueban
+      // TODOS los divs candidatos, de más corto a más largo (el más corto
+      // es el más específico, con menos "ruido" de widgets vecinos
+      // pegados), y solo se sigue con el primero que encaje de verdad.
+      const candidates = [];
+      for (const el of document.querySelectorAll("div")) {
         const txt = norm(el.textContent || "");
         if (txt.length > 80) continue; // descarta contenedores grandes que engloban más cosas
         const m = txt.match(/^Ganador de esta ronda\s*:\s*(.+)$/i) || txt.match(/^Winner of this round\s*:\s*(.+)$/i);
         if (!m) continue;
-        const value = norm(m[1] || "");
-        if (!value || value === "--" || value === "-" || /^-+$/.test(value)) {
-          lastWinnerLabelValue = "";
-          return;
-        }
-        if (value === lastWinnerLabelValue) return; // ya procesado este ganador
-        lastWinnerLabelValue = value;
+        candidates.push({ txt, value: norm(m[1] || "") });
+      }
+      if (!candidates.length) return;
+      candidates.sort((a, b) => a.value.length - b.value.length);
 
-        // El valor real viene como "<insignia emoji><nombre>:<precio> €"
-        // (visto en producción, p. ej. "🐻NB:2 €") — antes se guardaba el
-        // valor entero tal cual como "winner" y el precio se dejaba SIEMPRE
-        // vacío, así que esta señal (la más fiable de las tres para saber
-        // CUÁNDO cambia el ganador) nunca aportaba un precio con el que
-        // emparejar el pedido a un ordenador — por eso el reparto por
-        // directo nunca llegaba a activarse aunque el resto funcionara. Si
-        // el valor no encaja con ese formato (p. ej. ha pillado texto de un
-        // widget vecino, como "Artículos vendidos: 0", que no lleva € al
-        // final) se descarta en vez de emitirlo como si fuera un ganador
-        // real sin precio.
-        const parsed = value.match(/^(.*?)\s*[:：]\s*(\d{1,6}(?:[,.]\d{1,2})?)\s*(?:€|EUR)\s*$/iu);
-        if (!parsed) return;
-        const winnerName = norm(parsed[1] || "").replace(/^[^\p{L}\p{N}@]+/u, "").slice(0, 80) || value.slice(0, 80);
-        const winnerPrice = norm(parsed[2] || "");
-
-        // Mismo margen que el crono y el cartel: un único reconcileDelayMs
-        // tras detectar el fin de ronda antes de avisar, para que las tres
-        // señales se comporten igual.
-        setTimeout(() => {
-          notifyAuctionEndedDirect("winner_label_direct");
-          emitAuctionEvent({
-            source: "winner_label_dom",
-            winner: winnerName,
-            productName: "",
-            price: winnerPrice,
-            auctionId: "",
-            raw: txt.slice(0, 500),
-            pageUrl: location.href,
-            title: document.title,
-            detectedAt: new Date().toISOString(),
-            meta: { reason: "winner_label_dom" }
-          });
-        }, reconcileDelayMs);
+      // "--" (sin ganador todavía) es el mismo en cualquier nivel — basta
+      // con el candidato más corto para saber ese estado.
+      const shortest = candidates[0];
+      if (!shortest.value || shortest.value === "--" || shortest.value === "-" || /^-+$/.test(shortest.value)) {
+        lastWinnerLabelValue = "";
         return;
       }
+
+      // El valor real viene como "<insignia emoji><nombre>:<precio> €"
+      // (visto en producción, p. ej. "🐻NB:2 €") — antes se guardaba el
+      // valor entero tal cual como "winner" y el precio se dejaba SIEMPRE
+      // vacío, así que esta señal (la más fiable de las tres para saber
+      // CUÁNDO cambia el ganador) nunca aportaba un precio con el que
+      // emparejar el pedido a un ordenador — por eso el reparto por
+      // directo nunca llegaba a activarse aunque el resto funcionara.
+      let found = null;
+      for (const c of candidates) {
+        const parsed = c.value.match(/^(.*?)\s*[:：]\s*(\d{1,6}(?:[,.]\d{1,2})?)\s*(?:€|EUR)\s*$/iu);
+        if (parsed) { found = { c, parsed }; break; }
+      }
+      if (!found) return; // ninguno encajó (p. ej. solo se ha visto el "ruido" de un widget vecino)
+
+      const value = found.c.value;
+      if (value === lastWinnerLabelValue) return; // ya procesado este ganador
+      lastWinnerLabelValue = value;
+
+      const winnerName = norm(found.parsed[1] || "").replace(/^[^\p{L}\p{N}@]+/u, "").slice(0, 80) || value.slice(0, 80);
+      const winnerPrice = norm(found.parsed[2] || "");
+
+      // Mismo margen que el crono y el cartel: un único reconcileDelayMs
+      // tras detectar el fin de ronda antes de avisar, para que las tres
+      // señales se comporten igual.
+      setTimeout(() => {
+        notifyAuctionEndedDirect("winner_label_direct");
+        emitAuctionEvent({
+          source: "winner_label_dom",
+          winner: winnerName,
+          productName: "",
+          price: winnerPrice,
+          auctionId: "",
+          raw: found.c.txt.slice(0, 500),
+          pageUrl: location.href,
+          title: document.title,
+          detectedAt: new Date().toISOString(),
+          meta: { reason: "winner_label_dom" }
+        });
+      }, reconcileDelayMs);
     } catch (_) {}
   }
 
