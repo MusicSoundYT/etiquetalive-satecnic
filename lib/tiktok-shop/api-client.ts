@@ -86,6 +86,13 @@ export type TikTokOrder = {
   // pedidos de la misma persona en esta tienda. Se usa en Caja TikTok para
   // reconocer a un cliente ya conocido aunque el nombre venga tapado.
   user_id?: string;
+  // Cuando el pedido usa la logística de TikTok (shipping_type "TIKTOK", lo
+  // habitual en Woow Insólito/Magic Days), TikTok ya crea el paquete él
+  // solo en cuanto el pedido está listo para enviar — comprobado en
+  // producción. Si esto ya trae algo, NO hay que crear un paquete nuevo
+  // (ver generate-shipping-label/route.ts).
+  packages?: Array<{ id: string }>;
+  shipping_type?: string;
 };
 
 export type TikTokOrderSearchResult = {
@@ -164,16 +171,23 @@ export async function getOrderDetails(credentials: TikTokApiCredentials, shopCip
 }
 
 /**
- * Crea el paquete de envío ("Ship by Seller") de UN pedido. Confirmado en
- * producción: el campo es "order_id" (no "order_ids"), espera un string (no
- * un array: "type incorrect, expected type:string"), y ese string debe ser
- * un único número de pedido convertible a Int64 — ni un array ni varios IDs
- * separados por comas funcionan ("OrderId is invalid, the value must be
- * convertible to Int64"). TikTok sí permite combinar varios pedidos del
- * mismo cliente en una sola etiqueta desde Seller Center, pero el campo
- * real para hacerlo por API no se ha podido confirmar sin documentación
- * completa — de momento se genera un paquete/etiqueta por pedido (ver
- * generate-shipping-label/route.ts, que llama a esto una vez por pedido).
+ * Crea el paquete de envío de UN pedido. Confirmado en producción: el campo
+ * es "order_id" (no "order_ids"), espera un string (no un array: "type
+ * incorrect, expected type:string"), y ese string debe ser un único número
+ * de pedido convertible a Int64 — ni un array ni varios IDs separados por
+ * comas funcionan ("OrderId is invalid, the value must be convertible to
+ * Int64"). TikTok sí permite combinar varios pedidos del mismo cliente en
+ * una sola etiqueta desde Seller Center, pero el campo real para hacerlo
+ * por API no se ha podido confirmar sin documentación completa — de
+ * momento se genera un paquete/etiqueta por pedido.
+ *
+ * OJO: cuando el pedido usa la logística de TikTok (lo habitual aquí),
+ * TikTok ya crea el paquete él solo en cuanto el pedido está listo para
+ * enviar — llamar a esto para un pedido que ya tiene su propio
+ * order.packages[] falla ("Internal error" genérico, comprobado en
+ * producción). Quien llame a esto debe comprobar antes si el pedido ya
+ * trae un package_id (getOrderDetails) y, si es así, reutilizarlo en vez
+ * de llamar aquí — ver generate-shipping-label/route.ts.
  */
 export type TikTokPackage = { package_id: string };
 
@@ -191,9 +205,36 @@ export async function createShippingPackage(
   });
 }
 
-export type TikTokShippingDocument = { doc_url: string };
+/**
+ * Confirma/arranca el envío de un paquete ya creado — paso intermedio
+ * imprescindible que faltaba (confirmado con la documentación oficial y
+ * probado en producción con un pedido real): sin este paso, el documento
+ * de envío da siempre "Documents couldn't be printed before shipped" por
+ * mucho que el paquete ya exista. handover_method/pickup_slot y
+ * self_shipment son opcionales — solo hace falta self_shipment cuando el
+ * propio vendedor elige transportista (no es el caso: aquí TikTok ya
+ * asigna el suyo). Un cuerpo vacío es válido y funciona.
+ */
+export async function shipPackage(credentials: TikTokApiCredentials, shopCipher: string, packageId: string): Promise<void> {
+  await callApi<unknown>({
+    method: "POST",
+    path: `/fulfillment/202309/packages/${packageId}/ship`,
+    credentials,
+    query: { shop_cipher: shopCipher },
+    bodyString: JSON.stringify({}),
+  });
+}
 
-/** Documento de envío (PDF) ya generado de un paquete creado con createShippingPackage. */
+export type TikTokShippingDocument = { doc_url: string; tracking_number?: string };
+
+/**
+ * Documento de envío (PDF) de un paquete ya creado y enviado
+ * (shipPackage). Justo después de enviarlo puede tardar unos segundos en
+ * estar listo (confirmado en producción: falla las primeras veces con
+ * "Documents couldn't be printed before shipped" incluso habiendo llamado
+ * ya a shipPackage con éxito) — quien llame a esto debe reintentar con una
+ * pequeña espera, no darlo por error a la primera.
+ */
 export async function getPackageShippingDocument(
   credentials: TikTokApiCredentials,
   shopCipher: string,

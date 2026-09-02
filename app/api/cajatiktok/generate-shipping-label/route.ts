@@ -3,16 +3,34 @@ import { requireCajaTikTokExportEnv } from "@/lib/env";
 import { verifyCronSecret } from "@/lib/auth/verify-cron-secret";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getValidAccessToken, getShopsForConnection, toApiCredentials } from "@/lib/tiktok-shop/connection";
-import { createShippingPackage, getPackageShippingDocument, type TikTokApiCredentials } from "@/lib/tiktok-shop/api-client";
+import { createShippingPackage, shipPackage, getPackageShippingDocument, getOrderDetails, type TikTokApiCredentials } from "@/lib/tiktok-shop/api-client";
 import { findByGrupoNombre } from "@/lib/cajatiktok-export/tenant";
 
 type LabelResult = { orderId: string; docUrl?: string; alreadyShipped?: boolean; error?: string };
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * Genera la etiqueta de envío de cada pedido recibido — piloto de Caja
  * TikTok, vía la Edge Function "tiktok-bridge" (que ya resuelve el grupo del
  * que llama a partir de su sesión, así que aquí solo hace falta confiar en
  * el grupoNombre recibido).
+ *
+ * Tres pasos por pedido, en este orden (confirmados contra la API real con
+ * un pedido de producción — el fallo original era que faltaba el paso 2):
+ *   1. Crear el paquete — o reutilizar el que TikTok ya haya creado él solo
+ *      (pasa siempre en pedidos con su propia logística, que es lo habitual
+ *      aquí: comprobado que el paquete ya existe en cuanto el pedido está
+ *      listo para enviar, y volver a "crearlo" falla con un "Internal
+ *      error" genérico).
+ *   2. Enviarlo (shipPackage) — el paso que faltaba del todo. Sin esto, el
+ *      documento de envío siempre daba "Documents couldn't be printed
+ *      before shipped", por mucho que el paquete ya existiera.
+ *   3. Pedir el documento de envío — puede tardar unos segundos en estar
+ *      listo justo después de enviarlo, así que se reintenta con una
+ *      pequeña espera en vez de darlo por fallido a la primera.
  *
  * TikTok solo acepta UN pedido por paquete (confirmado en producción: ni un
  * array ni varios IDs separados por comas funcionan en "order_id"), así que
@@ -73,8 +91,43 @@ export async function POST(req: NextRequest) {
   const results: LabelResult[] = [];
   for (const orderId of orderIds) {
     try {
-      const pkg = await createShippingPackage(credentials, shopCipher, orderId);
-      const doc = await getPackageShippingDocument(credentials, shopCipher, pkg.package_id);
+      // 1. Paquete: reutilizar el que TikTok ya haya creado él solo (lo
+      // habitual en pedidos con su propia logística) en vez de intentar
+      // crear uno nuevo, que falla si ya existe.
+      const [orderDetail] = await getOrderDetails(credentials, shopCipher, [orderId]);
+      let packageId = orderDetail?.packages?.[0]?.id;
+      if (!packageId) {
+        const pkg = await createShippingPackage(credentials, shopCipher, orderId);
+        packageId = pkg.package_id;
+      }
+
+      // 2. Enviarlo. Si ya estaba enviado (por ejemplo a mano desde Seller
+      // Center) TikTok lo rechaza con un código de "ya enviado" — no es un
+      // fallo, seguimos igualmente a pedir el documento.
+      try {
+        await shipPackage(credentials, shopCipher, packageId);
+      } catch (shipErr) {
+        const shipMessage = shipErr instanceof Error ? shipErr.message : "Error desconocido.";
+        const alreadyShipped = shipMessage.includes("code 21011006") || shipMessage.includes("already shipped");
+        if (!alreadyShipped) throw shipErr;
+      }
+
+      // 3. Documento de envío — puede tardar unos segundos en estar listo
+      // justo después de enviarlo, así que se reintenta un par de veces
+      // antes de darlo por fallido.
+      const NOT_READY_CODE = "code 21042104";
+      let doc;
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        try {
+          doc = await getPackageShippingDocument(credentials, shopCipher, packageId);
+          break;
+        } catch (docErr) {
+          const docMessage = docErr instanceof Error ? docErr.message : "Error desconocido.";
+          if (attempt === 5 || !docMessage.includes(NOT_READY_CODE)) throw docErr;
+          await sleep(3000);
+        }
+      }
+      if (!doc) throw new Error("No se pudo obtener el documento de envío.");
       results.push({ orderId, docUrl: doc.doc_url });
     } catch (err) {
       // TikTok rechaza con este código si el pedido ya se envió antes (por
