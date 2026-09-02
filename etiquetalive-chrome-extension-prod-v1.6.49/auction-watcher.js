@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "el-1.6.45-auction";
+  const VERSION = "el-1.6.49-auction";
   const API_BASE = "https://etiquetalivetiktok.satecnic.es";
   const SCAN_INTERVAL_MS = 2500;
   const MUTATION_DEBOUNCE_MS = 1000;
@@ -129,10 +129,18 @@
   function extractPrice(text) {
     const s = String(text || "");
     // Actividad TikTok: "Rosa Granado Arroyo ha ganado el artículo de la subasta 4 €"
-    let m = s.match(/[\p{L}\p{N}_.@\- ]{2,80}\s+ha\s+ganado\s+el\s+art[ií]culo\s+de\s+la\s+subasta[^0-9]{0,40}(\d{1,6}(?:[,.]\d{1,2})?)\s*(?:€|EUR)?/iu);
+    // El nombre del producto (con emoji e ir. "📦 Predeterminado ...") puede
+    // ser más largo que el margen de 40 caracteres que había antes — y como
+    // ese margen solo excluía dígitos, un nombre de producto con medidas
+    // ("50L", "50x35x30"...) ya lo rompía antes de llegar al precio real.
+    // Se amplía el margen y, a cambio, se exige el € al final para no
+    // engancharse a un número cualquiera de en medio.
+    let m = s.match(/[\p{L}\p{N}_.@\- ]{2,80}\s+ha\s+ganado\s+el\s+art[ií]culo\s+de\s+la\s+subasta[\s\S]{0,200}?(\d{1,6}(?:[,.]\d{1,2})?)\s*(?:€|EUR)/iu);
     if (m?.[1]) return norm(m[1]);
-    // Formato real: "Ganador de esta ronda: silvy_883 : 2€"
-    m = s.match(/ganador(?:a)?\s+de\s+esta\s+ronda\s*[:：-]\s*@?[\p{L}\p{N}_.\-]{2,60}\s*[:：-]\s*(\d{1,6}(?:[,.]\d{1,2})?)\s*(?:€|EUR)?/iu);
+    // Formato real: "Ganador de esta ronda: 🐻silvy_883:2 €" — el nombre
+    // puede llevar delante una insignia/emoji, que antes rompía el match
+    // (permite hasta 4 caracteres cualquiera antes del nombre en sí).
+    m = s.match(/ganador(?:a)?\s+de\s+esta\s+ronda\s*[:：-]\s*@?[^\s:：]{0,4}?[\p{L}\p{N}_.\-]{2,60}\s*[:：-]\s*(\d{1,6}(?:[,.]\d{1,2})?)\s*(?:€|EUR)?/iu);
     if (m?.[1]) return norm(m[1]);
     m = s.match(/(?:€|EUR|price|precio|importe|final|winning|ganad[oa])[^0-9]{0,30}(\d{1,6}(?:[,.]\d{1,2})?)|(?:^|\s)(\d{1,6}(?:[,.]\d{1,2})?)\s*(?:€|EUR)/i);
     return norm((m && (m[1] || m[2])) || "");
@@ -143,8 +151,10 @@
     // Actividad TikTok: "Rosa Granado Arroyo ha ganado el artículo de la subasta 4 €"
     let m = s.match(/(?:^|\|)\s*([\p{L}\p{N}_.@\- ]{2,80}?)\s+ha\s+ganado\s+el\s+art[ií]culo\s+de\s+la\s+subasta/iu) || s.match(/^\s*([\p{L}\p{N}_.@\- ]{2,80}?)\s+ha\s+ganado\s+el\s+art[ií]culo\s+de\s+la\s+subasta/iu);
     if (m?.[1]) return norm(m[1]).replace(/^Actividad\s+/i, '').slice(0, 80);
-    // Formato real TikTok Live: "Ganador de esta ronda: silvy_883 : 2€"
-    m = s.match(/ganador(?:a)?\s+de\s+esta\s+ronda\s*[:：-]\s*(@?[\p{L}\p{N}_.\-]{2,60})\s*(?::|€|EUR|$)/iu);
+    // Formato real TikTok Live: "Ganador de esta ronda: 🐻silvy_883:2€" —
+    // mismo margen de hasta 4 caracteres para la insignia/emoji delante del
+    // nombre (ver extractPrice arriba).
+    m = s.match(/ganador(?:a)?\s+de\s+esta\s+ronda\s*[:：-]\s*(@?[^\s:：]{0,4}?[\p{L}\p{N}_.\-]{2,60})\s*(?::|€|EUR|$)/iu);
     if (m?.[1]) return norm(m[1]).slice(0, 80);
 
     const patterns = [
@@ -196,7 +206,9 @@
   function buildActivityEventsFromText(raw, source, meta = {}) {
     const text = norm(raw);
     const events = [];
-    const re = /([\p{L}\p{N}_.@\- ]{2,80}?)\s+ha\s+ganado\s+el\s+art[ií]culo\s+de\s+la\s+subasta[^0-9]{0,40}(\d{1,6}(?:[,.]\d{1,2})?)\s*(?:€|EUR)?/giu;
+    // Mismo margen que extractPrice arriba, y por el mismo motivo (nombre de
+    // producto largo/con medidas entre "subasta" y el precio real).
+    const re = /([\p{L}\p{N}_.@\- ]{2,80}?)\s+ha\s+ganado\s+el\s+art[ií]culo\s+de\s+la\s+subasta[\s\S]{0,200}?(\d{1,6}(?:[,.]\d{1,2})?)\s*(?:€|EUR)/giu;
     let m;
     while ((m = re.exec(text))) {
       const winner = norm(m[1]).replace(/^Actividad\s+/i, '').replace(/.*\b(Actividad)\b\s*/i, '').trim();
@@ -365,6 +377,23 @@
         }
         if (value === lastWinnerLabelValue) return; // ya procesado este ganador
         lastWinnerLabelValue = value;
+
+        // El valor real viene como "<insignia emoji><nombre>:<precio> €"
+        // (visto en producción, p. ej. "🐻NB:2 €") — antes se guardaba el
+        // valor entero tal cual como "winner" y el precio se dejaba SIEMPRE
+        // vacío, así que esta señal (la más fiable de las tres para saber
+        // CUÁNDO cambia el ganador) nunca aportaba un precio con el que
+        // emparejar el pedido a un ordenador — por eso el reparto por
+        // directo nunca llegaba a activarse aunque el resto funcionara. Si
+        // el valor no encaja con ese formato (p. ej. ha pillado texto de un
+        // widget vecino, como "Artículos vendidos: 0", que no lleva € al
+        // final) se descarta en vez de emitirlo como si fuera un ganador
+        // real sin precio.
+        const parsed = value.match(/^(.*?)\s*[:：]\s*(\d{1,6}(?:[,.]\d{1,2})?)\s*(?:€|EUR)\s*$/iu);
+        if (!parsed) return;
+        const winnerName = norm(parsed[1] || "").replace(/^[^\p{L}\p{N}@]+/u, "").slice(0, 80) || value.slice(0, 80);
+        const winnerPrice = norm(parsed[2] || "");
+
         // Mismo margen que el crono y el cartel: un único reconcileDelayMs
         // tras detectar el fin de ronda antes de avisar, para que las tres
         // señales se comporten igual.
@@ -372,9 +401,9 @@
           notifyAuctionEndedDirect("winner_label_direct");
           emitAuctionEvent({
             source: "winner_label_dom",
-            winner: value.slice(0, 80),
+            winner: winnerName,
             productName: "",
-            price: "",
+            price: winnerPrice,
             auctionId: "",
             raw: txt.slice(0, 500),
             pageUrl: location.href,
