@@ -6,7 +6,7 @@ import { getValidAccessToken, getShopsForConnection, toApiCredentials } from "@/
 import { createShippingPackage, shipPackage, getPackageShippingDocument, getOrderDetails, type TikTokApiCredentials } from "@/lib/tiktok-shop/api-client";
 import { findByGrupoNombre } from "@/lib/cajatiktok-export/tenant";
 
-type LabelResult = { orderId: string; docUrl?: string; alreadyShipped?: boolean; error?: string };
+type LabelResult = { orderId: string; docUrl?: string; packageId?: string; alreadyShipped?: boolean; error?: string };
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -90,12 +90,13 @@ export async function POST(req: NextRequest) {
 
   const results: LabelResult[] = [];
   for (const orderId of orderIds) {
+    let packageId: string | undefined;
     try {
       // 1. Paquete: reutilizar el que TikTok ya haya creado él solo (lo
       // habitual en pedidos con su propia logística) en vez de intentar
       // crear uno nuevo, que falla si ya existe.
       const [orderDetail] = await getOrderDetails(credentials, shopCipher, [orderId]);
-      let packageId = orderDetail?.packages?.[0]?.id;
+      packageId = orderDetail?.packages?.[0]?.id;
       if (!packageId) {
         const pkg = await createShippingPackage(credentials, shopCipher, orderId);
         packageId = pkg.package_id;
@@ -128,14 +129,14 @@ export async function POST(req: NextRequest) {
         }
       }
       if (!doc) throw new Error("No se pudo obtener el documento de envío.");
-      results.push({ orderId, docUrl: doc.doc_url });
+      results.push({ orderId, docUrl: doc.doc_url, packageId });
     } catch (err) {
       // TikTok rechaza con este código si el pedido ya se envió antes (por
       // ejemplo, a mano desde Seller Center) — no es un fallo, solo
       // significa que ya no hace falta generar nada nuevo para ese pedido.
       const message = err instanceof Error ? err.message : "Error desconocido.";
       if (message.includes("code 21011006") || message.includes("already shipped")) {
-        results.push({ orderId, alreadyShipped: true });
+        results.push({ orderId, packageId, alreadyShipped: true });
       } else {
         console.error(`[Caja TikTok] Error generando etiqueta de envío del pedido ${orderId}:`, err);
         results.push({ orderId, error: message });
