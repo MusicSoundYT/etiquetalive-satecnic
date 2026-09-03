@@ -1,7 +1,16 @@
 import "server-only";
 import { searchOrders, getOrderDetails, type TikTokApiCredentials } from "@/lib/tiktok-shop/api-client";
 
-export type ReturnRecommendation = { decision: "approve" | "reject" | "manual"; reason: string };
+export type ReturnRecommendation = {
+  decision: "approve" | "reject" | "manual";
+  reason: string;
+  // El user_id del comprador en TikTok, cuando se ha llegado a consultar el
+  // pedido — lo usa el panel para registrar la decisión en devoluciones_decisiones
+  // (lista negra informativa de compradores con más de 3 cancelaciones
+  // aprobadas). No siempre está disponible (p.ej. si el pedido no se pudo
+  // consultar).
+  buyerUserId?: string;
+};
 
 /**
  * Calcula qué haría la regla acordada con el cliente para una cancelación
@@ -27,7 +36,11 @@ export async function computeReturnRecommendation(
   const [order] = await getOrderDetails(credentials, shopCipher, [orderId]);
   if (!order) return { decision: "manual", reason: "No se ha podido consultar este pedido en TikTok." };
   if (!order.auto_combine_group_id || !order.user_id) {
-    return { decision: "manual", reason: "Este pedido no tiene grupo de envío combinado — revisar a mano." };
+    return {
+      decision: "manual",
+      reason: "Este pedido no tiene grupo de envío combinado — revisar a mano.",
+      buyerUserId: order.user_id,
+    };
   }
 
   const { orders } = await searchOrders(credentials, shopCipher, {
@@ -46,16 +59,22 @@ export async function computeReturnRecommendation(
   const position = sorted.findIndex((o) => o.id === orderId) + 1;
 
   if (size <= 2) {
-    return { decision: "approve", reason: `El comprador tiene ${size} pedido${size === 1 ? "" : "s"} en este envío combinado.` };
+    return {
+      decision: "approve",
+      reason: `El comprador tiene ${size} pedido${size === 1 ? "" : "s"} en este envío combinado.`,
+      buyerUserId: order.user_id,
+    };
   }
   if (position === 1) {
     return {
       decision: "reject",
       reason: `Es el 1º de ${size} pedidos del mismo envío combinado — lleva los gastos de envío de todo el grupo.`,
+      buyerUserId: order.user_id,
     };
   }
   return {
     decision: "approve",
     reason: `Es el ${position}º de ${size} pedidos del mismo envío combinado — no lleva los gastos de envío.`,
+    buyerUserId: order.user_id,
   };
 }

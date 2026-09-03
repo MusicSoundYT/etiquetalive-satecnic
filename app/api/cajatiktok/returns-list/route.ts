@@ -78,6 +78,10 @@ export async function POST(req: NextRequest) {
         refundTotal: r.refund_amount?.refund_total ?? null,
         currency: r.refund_amount?.currency ?? null,
         products: (r.return_line_items || []).map((li) => li.product_name || li.sku_name || "").filter(Boolean),
+        // Sale también fuera de "recommendation" (aunque venga de ahí) para
+        // que el panel no tenga que fiarse de un campo anidado al registrar
+        // la decisión en devoluciones_decisiones (lista negra informativa).
+        buyerUserId: "buyerUserId" in recommendation ? recommendation.buyerUserId ?? null : null,
         recommendation,
       });
     }
