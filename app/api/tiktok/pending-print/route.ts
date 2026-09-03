@@ -116,7 +116,20 @@ export async function GET(req: NextRequest) {
     if (shopId) query = query.eq("tiktok_shop_id", shopId);
     if (excludeIds.length) query = query.not("id", "in", `(${excludeIds.join(",")})`);
 
-    const { data: candidates } = await query.order("fecha_detectado", { ascending: true }).limit(MAX_PER_POLL);
+    // Descendente (lo más reciente primero) — a propósito, y NO por
+    // casualidad. Con la ventana larga de 24h para dispositivos ya
+    // establecidos (ver arriba), un directo con pedidos huérfanos de horas
+    // antes (de una sesión anterior, cuyo dispositivo ya no existe) volvía a
+    // ser candidato — y, en ascendente con LIMIT 5, esos huérfanos antiguos
+    // ocupaban SIEMPRE las 5 plazas de cada sondeo, bloqueando para siempre
+    // los pedidos nuevos del directo en marcha (visto en producción: Magic
+    // Days, 3 de septiembre, justo tras desplegar la ventana de 24h — nada
+    // del directo actual llegaba a imprimirse mientras esto estuvo así).
+    // En descendente, un pedido recién cobrado siempre está entre los 5 más
+    // recientes y se entrega en el siguiente sondeo (2s) — los huérfanos
+    // antiguos se van recuperando solos en cuanto no haya nada más nuevo por
+    // delante, sin bloquear nunca lo de ahora mismo.
+    const { data: candidates } = await query.order("fecha_detectado", { ascending: false }).limit(MAX_PER_POLL);
 
     for (const candidate of candidates ?? []) {
       const subtotalCents = (candidate.raw_payload as { subtotal_cents?: number } | null)?.subtotal_cents;
