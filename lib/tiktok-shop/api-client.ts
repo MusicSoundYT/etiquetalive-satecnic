@@ -93,6 +93,13 @@ export type TikTokOrder = {
   // (ver generate-shipping-label/route.ts).
   packages?: Array<{ id: string }>;
   shipping_type?: string;
+  // Cuando TikTok combina varios pedidos del mismo comprador en un solo
+  // envío, comparten este mismo id (confirmado en producción, tanto en
+  // searchOrders como en getOrderDetails). Se usa en el panel de
+  // devoluciones (Caja TikTok, Woow Insólito) para saber cuántos pedidos
+  // van en el mismo envío que uno dado, y cuál es el más antiguo — el que
+  // lleva los gastos de envío de todo el grupo.
+  auto_combine_group_id?: string;
 };
 
 export type TikTokOrderSearchResult = {
@@ -105,12 +112,22 @@ export type TikTokOrderSearchResult = {
  * Búsqueda de pedidos de una tienda. La API no permite filtrar por
  * order_type en el propio buscador (se probó: lo ignora en silencio), así
  * que quien filtre por "AUCTION" tiene que hacerlo después, sobre lo que
- * devuelve esta función.
+ * devuelve esta función. buyerUserId sí filtra de verdad (confirmado en
+ * producción) — se usa en el panel de devoluciones para traer los demás
+ * pedidos del mismo comprador y resolver su grupo de envío combinado
+ * (auto_combine_group_id, que también viene incluido en cada pedido de
+ * este buscador, sin falta de pedir el detalle aparte).
  */
 export async function searchOrders(
   credentials: TikTokApiCredentials,
   shopCipher: string,
-  opts: { pageSize?: number; pageToken?: string; sortField?: "create_time" | "update_time"; sortOrder?: "ASC" | "DESC" } = {}
+  opts: {
+    pageSize?: number;
+    pageToken?: string;
+    sortField?: "create_time" | "update_time";
+    sortOrder?: "ASC" | "DESC";
+    buyerUserId?: string;
+  } = {}
 ): Promise<TikTokOrderSearchResult> {
   const query: Record<string, string> = {
     shop_cipher: shopCipher,
@@ -120,7 +137,7 @@ export async function searchOrders(
   if (opts.sortField) query.sort_field = opts.sortField;
   if (opts.sortOrder) query.sort_order = opts.sortOrder;
 
-  const bodyString = JSON.stringify({});
+  const bodyString = JSON.stringify(opts.buyerUserId ? { buyer_user_id: opts.buyerUserId } : {});
   return callApi<TikTokOrderSearchResult>({
     method: "POST",
     path: "/order/202309/orders/search",
@@ -257,5 +274,98 @@ export async function getPackageShippingDocument(
     path: `/fulfillment/202309/packages/${packageId}/shipping_documents`,
     credentials,
     query: { shop_cipher: shopCipher, document_type: "SHIPPING_LABEL_AND_PACKING_SLIP" },
+  });
+}
+
+// Panel de devoluciones/cancelaciones (Caja TikTok, piloto solo para Woow
+// Insólito) — confirmado en producción contra la API real de TikTok.
+
+export type TikTokReturnOrder = {
+  return_id: string;
+  order_id: string;
+  return_status: string;
+  // "REFUND" = cancelación pura (sin devolución física); "RETURN_AND_REFUND"
+  // = devolución física tras la entrega. Solo la primera es una
+  // "cancelación" en el sentido de la regla del cliente — la segunda queda
+  // siempre fuera, a revisar a mano.
+  return_type: string;
+  return_reason?: string;
+  return_reason_text?: string;
+  create_time: number;
+  role?: string;
+  refund_amount?: {
+    currency?: string;
+    refund_total?: string;
+    refund_subtotal?: string;
+    refund_shipping_fee?: string;
+    refund_tax?: string;
+  };
+  return_line_items?: Array<{ product_name?: string; sku_name?: string }>;
+  seller_next_action_response?: Array<{ action?: string; deadline?: number }>;
+};
+
+/**
+ * Devoluciones/cancelaciones de la tienda. El filtro return_status en el
+ * body sí funciona (probado: con RETURN_OR_REFUND_REQUEST_PENDING se
+ * recortan las 664 históricas a las que de verdad están pendientes de
+ * decisión) — el filtro return_type NO (probado: sigue devolviendo de
+ * todos los tipos igualmente), así que quien llame a esto debe filtrar
+ * return_type === "REFUND" por su cuenta si solo quiere cancelaciones.
+ */
+export async function searchReturns(
+  credentials: TikTokApiCredentials,
+  shopCipher: string,
+  opts: { returnStatus?: string[]; pageSize?: number; pageToken?: string } = {}
+): Promise<{ return_orders: TikTokReturnOrder[]; next_page_token?: string; total_count?: number }> {
+  const query: Record<string, string> = { shop_cipher: shopCipher, page_size: String(opts.pageSize ?? 50) };
+  if (opts.pageToken) query.page_token = opts.pageToken;
+  const body: Record<string, unknown> = {};
+  if (opts.returnStatus?.length) body.return_status = opts.returnStatus;
+  return callApi({
+    method: "POST",
+    path: "/return_refund/202309/returns/search",
+    credentials,
+    query,
+    bodyString: JSON.stringify(body),
+  });
+}
+
+/**
+ * Aprueba una devolución/cancelación pendiente — acción real e irreversible
+ * (dispara el reembolso). Confirmado en producción con un return_id
+ * inventado (da "invalid return id", nunca se ha ejecutado contra una
+ * devolución real). El campo "decision" es obligatorio; su valor exacto no
+ * se ha podido confirmar sin ejecutar la acción de verdad — "APPROVE" es la
+ * hipótesis más directa dado el nombre del endpoint, a verificar en el
+ * primer uso real desde el panel.
+ */
+export async function approveReturn(credentials: TikTokApiCredentials, shopCipher: string, returnId: string): Promise<void> {
+  await callApi<unknown>({
+    method: "POST",
+    path: `/return_refund/202309/returns/${returnId}/approve`,
+    credentials,
+    query: { shop_cipher: shopCipher },
+    bodyString: JSON.stringify({ decision: "APPROVE" }),
+  });
+}
+
+/**
+ * Rechaza una devolución/cancelación pendiente — acción real e irreversible.
+ * A diferencia de approve, este endpoint pide "reject_reason" (confirmado
+ * en producción: con un return_id inventado y sin reject_reason da
+ * "RejectReason is a required field").
+ */
+export async function rejectReturn(
+  credentials: TikTokApiCredentials,
+  shopCipher: string,
+  returnId: string,
+  rejectReason: string
+): Promise<void> {
+  await callApi<unknown>({
+    method: "POST",
+    path: `/return_refund/202309/returns/${returnId}/reject`,
+    credentials,
+    query: { shop_cipher: shopCipher },
+    bodyString: JSON.stringify({ reject_reason: rejectReason }),
   });
 }
