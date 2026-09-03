@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getValidAccessToken, getShopsForConnection, toApiCredentials } from "@/lib/tiktok-shop/connection";
 import { getPackageShippingDocument, type TikTokApiCredentials } from "@/lib/tiktok-shop/api-client";
 import { findByGrupoNombre } from "@/lib/cajatiktok-export/tenant";
+import { mergeShippingLabelPdfs } from "@/lib/tiktok-shop/merge-shipping-labels";
 
 type ReprintResult = { orderId: string; docUrl?: string; error?: string };
 
@@ -92,5 +93,21 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ results });
+  // Un cliente con 2+ pedidos quiere UN solo PDF con todas sus etiquetas
+  // dentro, no una pestaña por pedido — se unen aquí, en el servidor (ya
+  // tenemos los doc_url a mano). Si algo falla al unirlas (una URL no
+  // descarga, un PDF viene raro...), se sigue devolviendo cada docUrl por
+  // separado como hasta ahora — nunca debe perderse una etiqueta por un
+  // fallo al fusionar, es solo una comodidad de más.
+  const docUrls = results.filter((r) => r.docUrl).map((r) => r.docUrl!);
+  let mergedDocBase64: string | undefined;
+  if (docUrls.length > 1) {
+    try {
+      mergedDocBase64 = (await mergeShippingLabelPdfs(docUrls)).toString("base64");
+    } catch (err) {
+      console.error("[Caja TikTok] No se pudieron unir las etiquetas reimpresas en un solo PDF:", err);
+    }
+  }
+
+  return NextResponse.json({ results, mergedDocBase64 });
 }
