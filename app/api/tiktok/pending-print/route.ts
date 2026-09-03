@@ -6,6 +6,12 @@ import { generateLabelHtml } from "@/lib/labels/render";
 import { resolveExclusiveDevice } from "@/lib/orders/resolve-exclusive-device";
 
 const MAX_PER_POLL = 5;
+// Cuántos pedidos recientes se leen para luego descartar los que este
+// dispositivo ya tenga entregados (ver más abajo). Holgado respecto a
+// MAX_PER_POLL para que un dispositivo que vuelve tras un rato parado siga
+// alcanzando lo que le falta, pero acotado: es lo que mantiene la consulta
+// pequeña y previsible pase el tiempo que pase.
+const CANDIDATE_SCAN_LIMIT = 40;
 // Ventana de tiempo que se mira cuando hay dispositivos con "imprimir
 // también en otros ordenadores" activado (device_id) — sin esto, activarlo
 // por primera vez en un ordenador reimprimiría TODO el historial de pedidos
@@ -100,13 +106,6 @@ export async function GET(req: NextRequest) {
     const lookbackMs = isFreshDevice ? DEVICE_BROADCAST_WINDOW_MS : ESTABLISHED_DEVICE_LOOKBACK_MS;
     const since = new Date(Date.now() - lookbackMs).toISOString();
 
-    const { data: alreadyDelivered } = await supabaseAdmin
-      .from("order_print_deliveries")
-      .select("order_id")
-      .eq("device_id", deviceId)
-      .gte("delivered_at", since);
-    const excludeIds = (alreadyDelivered ?? []).map((d) => d.order_id as string);
-
     let query = supabaseAdmin
       .from("orders")
       .select("*")
@@ -114,7 +113,6 @@ export async function GET(req: NextRequest) {
       .gt("impresiones_cobrables", 0)
       .gte("fecha_detectado", since);
     if (shopId) query = query.eq("tiktok_shop_id", shopId);
-    if (excludeIds.length) query = query.not("id", "in", `(${excludeIds.join(",")})`);
 
     // Descendente (lo más reciente primero) — a propósito, y NO por
     // casualidad. Con la ventana larga de 24h para dispositivos ya
@@ -125,13 +123,41 @@ export async function GET(req: NextRequest) {
     // los pedidos nuevos del directo en marcha (visto en producción: Magic
     // Days, 3 de septiembre, justo tras desplegar la ventana de 24h — nada
     // del directo actual llegaba a imprimirse mientras esto estuvo así).
-    // En descendente, un pedido recién cobrado siempre está entre los 5 más
+    // En descendente, un pedido recién cobrado siempre está entre los más
     // recientes y se entrega en el siguiente sondeo (2s) — los huérfanos
     // antiguos se van recuperando solos en cuanto no haya nada más nuevo por
     // delante, sin bloquear nunca lo de ahora mismo.
-    const { data: candidates } = await query.order("fecha_detectado", { ascending: false }).limit(MAX_PER_POLL);
+    const { data: recent, error: recentError } = await query
+      .order("fecha_detectado", { ascending: false })
+      .limit(CANDIDATE_SCAN_LIMIT);
+    if (recentError) {
+      // Nunca en silencio: cuando esta consulta falla, el sondeo devuelve
+      // cero pedidos y deja de imprimirse TODO sin que salte ningún aviso en
+      // ninguna parte (así estuvo un rato en producción el 3 de septiembre).
+      console.error("[pending-print] No se pudieron leer los pedidos pendientes:", recentError);
+      return NextResponse.json({ error: "No se pudieron leer los pedidos pendientes." }, { status: 500 });
+    }
 
-    for (const candidate of candidates ?? []) {
+    // Se descartan los que este dispositivo YA tenga entregados, mirando solo
+    // los pocos pedidos recién leídos — nunca al revés. Antes se pedía todo el
+    // historial de entregas del dispositivo y se metía en un "NOT IN", que en
+    // cuanto pasaba de unos cientos de pedidos generaba una URL de decenas de
+    // miles de caracteres: PostgREST la rechazaba con "Bad Request", el error
+    // no se miraba, y el sondeo devolvía cero pedidos para siempre (visto en
+    // producción: 1000 ids, 37.001 caracteres, los dos ordenadores del directo
+    // sin imprimir absolutamente nada).
+    const recentIds = (recent ?? []).map((o) => o.id as string);
+    const { data: alreadyDelivered } = recentIds.length
+      ? await supabaseAdmin
+          .from("order_print_deliveries")
+          .select("order_id")
+          .eq("device_id", deviceId)
+          .in("order_id", recentIds)
+      : { data: [] };
+    const deliveredIds = new Set((alreadyDelivered ?? []).map((d) => d.order_id as string));
+    const candidates = (recent ?? []).filter((o) => !deliveredIds.has(o.id as string)).slice(0, MAX_PER_POLL);
+
+    for (const candidate of candidates) {
       const subtotalCents = (candidate.raw_payload as { subtotal_cents?: number } | null)?.subtotal_cents;
       const exclusiveDevice = await resolveExclusiveDevice(user.tenant_id, subtotalCents, candidate.fecha_detectado as string);
       if (exclusiveDevice && exclusiveDevice !== deviceId) continue; // es claramente de otra estación, no la mía
