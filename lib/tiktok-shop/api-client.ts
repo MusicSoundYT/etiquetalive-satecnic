@@ -234,6 +234,18 @@ export type TikTokShippingDocument = { doc_url: string; tracking_number?: string
  * "Documents couldn't be printed before shipped" incluso habiendo llamado
  * ya a shipPackage con éxito) — quien llame a esto debe reintentar con una
  * pequeña espera, no darlo por error a la primera.
+ *
+ * document_type=SHIPPING_LABEL_AND_PACKING_SLIP (no solo SHIPPING_LABEL):
+ * confirmado en producción que TikTok trata cada tipo como un documento
+ * casi independiente — pedir solo la etiqueta daba un PDF de una sola
+ * página (sin el albarán con el listado de productos que sí llevan las
+ * etiquetas reales de Seller Center), y en pedidos ya recogidos por el
+ * transportista, "SHIPPING_LABEL" a secas incluso llega a fallar
+ * (code 21042102, "no se puede imprimir tras la recogida") mientras que el
+ * albarán solo seguía disponible sin problema. Los valores válidos, según
+ * el propio error de TikTok si se manda uno inválido: SHIPPING_LABEL,
+ * PACKING_SLIP, SHIPPING_LABEL_AND_PACKING_SLIP, SHIPPING_LABEL_PICTURE,
+ * HAZMAT_LABEL, INVOICE_LABEL.
  */
 export async function getPackageShippingDocument(
   credentials: TikTokApiCredentials,
@@ -244,6 +256,6 @@ export async function getPackageShippingDocument(
     method: "GET",
     path: `/fulfillment/202309/packages/${packageId}/shipping_documents`,
     credentials,
-    query: { shop_cipher: shopCipher, document_type: "SHIPPING_LABEL" },
+    query: { shop_cipher: shopCipher, document_type: "SHIPPING_LABEL_AND_PACKING_SLIP" },
   });
 }
