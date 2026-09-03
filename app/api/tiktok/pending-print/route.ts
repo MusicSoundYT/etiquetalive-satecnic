@@ -20,8 +20,26 @@ const MAX_PER_POLL = 5;
 // hubiera impreso antes por otra vía (visto en producción: una ráfaga de
 // decenas de etiquetas viejas al activar el interruptor). Con un directo en
 // marcha, 15 minutos es más que suficiente para no perder nada realmente
-// reciente sin arrastrar horas de historial.
+// reciente sin arrastrar horas de historial. Se aplica SOLO la primera vez
+// que se ve un device_id (ver isFreshDevice más abajo) — nunca a uno que ya
+// lleva un rato entregando etiquetas.
 const DEVICE_BROADCAST_WINDOW_MS = 15 * 60 * 1000;
+// Ventana para dispositivos que YA llevan un rato entregando etiquetas.
+//
+// Antes se usaba la misma ventana de 15 min para todos, siempre medida como
+// "ahora menos 15 min" — un dispositivo que llevaba horas funcionando bien
+// podía quedarse unos minutos sin poder preguntar a tiempo (un corte de red,
+// el ordenador que se ralentiza un instante...) y, pasados esos 15 min,
+// cualquier pedido ya cobrado que se le hubiera quedado pendiente
+// desaparecía de su vista PARA SIEMPRE — la ventana es siempre móvil, así
+// que ese pedido nunca volvía a entrar en ella. Visto en producción: Magic
+// Days, dos estaciones simultáneas (directo del 3 de septiembre) — la única
+// forma de recuperar esas etiquetas fue desactivar "imprimir también en
+// otros ordenadores" (que no tiene ninguna ventana), perdiendo con eso la
+// exclusividad entre las dos estaciones.
+//
+// 24 horas cubre de sobra cualquier directo sin arrastrar más que eso.
+const ESTABLISHED_DEVICE_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Consultado cada pocos segundos por la pestaña de Pedidos (API): devuelve
@@ -67,7 +85,21 @@ export async function GET(req: NextRequest) {
   const results: { id: string; tk: string; label_html: string }[] = [];
 
   if (deviceId) {
-    const since = new Date(Date.now() - DEVICE_BROADCAST_WINDOW_MS).toISOString();
+    // "Recién activado" = este device_id nunca ha recibido ninguna etiqueta
+    // — solo a estos se les aplica la ventana corta (para no inundarlos con
+    // horas de historial al activar el reparto por primera vez). En cuanto
+    // ya se le ha entregado algo alguna vez, pasa a la ventana larga: nunca
+    // debería perder un pedido cobrado por quedarse unos minutos sin poder
+    // preguntar a tiempo.
+    const { data: everDelivered } = await supabaseAdmin
+      .from("order_print_deliveries")
+      .select("order_id")
+      .eq("device_id", deviceId)
+      .limit(1);
+    const isFreshDevice = !everDelivered?.length;
+    const lookbackMs = isFreshDevice ? DEVICE_BROADCAST_WINDOW_MS : ESTABLISHED_DEVICE_LOOKBACK_MS;
+    const since = new Date(Date.now() - lookbackMs).toISOString();
+
     const { data: alreadyDelivered } = await supabaseAdmin
       .from("order_print_deliveries")
       .select("order_id")
